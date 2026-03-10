@@ -1,0 +1,227 @@
+# ============================================================
+# kalyNow – Local Development Infrastructure
+# ============================================================
+# Usage:
+#   cp .env.example .env   # set your own passwords
+#   docker compose up -d
+# ============================================================
+
+networks:
+  kalyNow:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  mongo_data:
+  kafka_data:
+  minio_data:
+  clickhouse_data:
+  nomad_data:
+
+services:
+
+  # ----------------------------------------------------------
+  # Traefik – API Gateway / Reverse Proxy
+  # ----------------------------------------------------------
+  traefik:
+    image: traefik:v3.3
+    container_name: traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "${TRAEFIK_DASHBOARD_PORT:-8080}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+    networks:
+      - kalyNow
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.traefik-dashboard.service=api@internal"
+
+  # ----------------------------------------------------------
+  # Kafka (KRaft mode – no ZooKeeper)
+  # ----------------------------------------------------------
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: kafka
+    restart: unless-stopped
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:${KAFKA_PORT:-9092}
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qg"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - kalyNow
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ----------------------------------------------------------
+  # Redis
+  # ----------------------------------------------------------
+  redis:
+    image: redis:7.4-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --requirepass ${REDIS_PASSWORD:-changeme}
+    volumes:
+      - redis_data:/data
+      - ./config/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks:
+      - kalyNow
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------
+  # PostgreSQL
+  # ----------------------------------------------------------
+  postgres:
+    image: postgres:17-alpine
+    container_name: postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kalyNow}
+      POSTGRES_USER: ${POSTGRES_USER:-kalyNow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - kalyNow
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kalyNow} -d ${POSTGRES_DB:-kalyNow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------
+  # MongoDB
+  # ----------------------------------------------------------
+  mongodb:
+    image: mongo:8.0
+    container_name: mongodb
+    restart: unless-stopped
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-kalyNow}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-changeme}
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - kalyNow
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ----------------------------------------------------------
+  # MinIO – S3-compatible object storage
+  # ----------------------------------------------------------
+  minio:
+    image: minio/minio:RELEASE.2025-02-28T09-55-16Z
+    container_name: minio
+    restart: unless-stopped
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - kalyNow
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.minio.rule=Host(`minio.localhost`)"
+      - "traefik.http.services.minio.loadbalancer.server.port=9001"
+
+  # ----------------------------------------------------------
+  # ClickHouse – analytical database
+  # ----------------------------------------------------------
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.3
+    container_name: clickhouse
+    restart: unless-stopped
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_NATIVE_PORT:-9004}:9000"
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-kalyNow}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-kalyNow}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./config/clickhouse/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
+    networks:
+      - kalyNow
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ----------------------------------------------------------
+  # Nomad – workload orchestrator (dev mode)
+  # ----------------------------------------------------------
+  nomad:
+    image: hashicorp/nomad:1.10
+    container_name: nomad
+    restart: unless-stopped
+    ports:
+      - "${NOMAD_HTTP_PORT:-4646}:4646"
+    cap_add:
+      - SYS_ADMIN
+    volumes:
+      - nomad_data:/nomad/data
+      - ./nomad/config/nomad.hcl:/etc/nomad.d/nomad.hcl:ro
+      - ./nomad/jobs:/nomad/jobs:ro
+    command: agent -config=/etc/nomad.d/nomad.hcl
+    networks:
+      - kalyNow
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4646/v1/status/leader"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nomad.rule=Host(`nomad.localhost`)"
+      - "traefik.http.services.nomad.loadbalancer.server.port=4646"
