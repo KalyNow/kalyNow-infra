@@ -1,0 +1,11 @@
+# Environment variables – never commit real credentials
+.env
+
+# macOS
+.DS_Store
+
+# Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!--
+  ClickHouse user configuration for local development.
+  The default user is defined here; the CLICKHOUSE_USER / CLICKHOUSE_PASSWORD
+  environment variables create the application user automatically via the
+  official image entrypoint.
+
+  https://clickhouse.com/docs/en/operations/settings/settings-users
+-->
+<clickhouse>
+    <users>
+        <!-- Disable the anonymous default user -->
+        <default>
+            <password></password>
+            <networks>
+                <ip>::1</ip>
+                <ip>127.0.0.1</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+    </users>
+</clickhouse>
