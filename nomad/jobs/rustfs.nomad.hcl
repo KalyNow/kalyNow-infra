@@ -1,8 +1,8 @@
-job "minio" {
+job "rustfs" {
   datacenters = ["dc1"]
   type        = "service"
 
-  group "minio" {
+  group "rustfs" {
     count = 1
 
     network {
@@ -10,32 +10,32 @@ job "minio" {
       port "console" { static = 9001 }
     }
 
-    volume "minio_data" {
+    volume "rustfs_data" {
       type   = "host"
-      source = "minio_data"
+      source = "rustfs_data"
     }
 
-    task "minio" {
+    task "rustfs" {
       driver = "docker"
 
       config {
-        image   = "minio/minio:RELEASE.2025-02-28T09-55-16Z"
+        image   = "rustfs/rustfs:1.0.0-alpha.85"
         ports   = ["api", "console"]
-        command = "server"
-        args    = ["/data", "--console-address", ":9001"]
+        args    = ["--console-enable", "/data"]
       }
 
       volume_mount {
-        volume      = "minio_data"
+        volume      = "rustfs_data"
         destination = "/data"
       }
 
       template {
-        destination = "secrets/minio.env"
+        destination = "secrets/rustfs.env"
         env         = true
         data        = <<EOF
-MINIO_ROOT_USER={{ env "NOMAD_META_minio_user" | default "minioadmin" }}
-MINIO_ROOT_PASSWORD={{ env "NOMAD_META_minio_password" | default "changeme" }}
+RUSTFS_ACCESS_KEY={{ env "NOMAD_META_rustfs_access_key" | default "rustfsadmin" }}
+RUSTFS_SECRET_KEY={{ env "NOMAD_META_rustfs_secret_key" | default "changeme" }}
+RUSTFS_CONSOLE_ENABLE=true
 EOF
       }
 
@@ -45,12 +45,12 @@ EOF
       }
 
       service {
-        name = "minio-api"
+        name = "rustfs-api"
         port = "api"
 
         check {
           type     = "http"
-          path     = "/minio/health/live"
+          path     = "/health/live"
           port     = "api"
           interval = "10s"
           timeout  = "2s"
@@ -58,7 +58,7 @@ EOF
       }
 
       service {
-        name = "minio-console"
+        name = "rustfs-console"
         port = "console"
       }
     }

@@ -1,0 +1,33 @@
+# Dynamic Traefik configuration – KalyNow public asset proxy
+#
+# Public URL pattern:
+#   http://kalynow.localhost/kalynow/assets/<bucket>/<key>
+#            │                   │           │        └── S3 object key
+#            │                   │           └── bucket name (kalynow-assets)
+#            │                   └── path prefix stripped by stripPrefix middleware
+#            └── main app host
+#
+# The middleware strips "/kalynow/assets" so RustFS receives the
+# request as /<bucket>/<key>, which is exactly the path-style S3 URL.
+
+http:
+  routers:
+    kalynow-assets:
+      rule: "Host(`kalynow.localhost`) && PathPrefix(`/kalynow/assets`)"
+      entryPoints:
+        - web
+      middlewares:
+        - strip-assets-prefix
+      service: rustfs-api
+
+  middlewares:
+    strip-assets-prefix:
+      stripPrefix:
+        prefixes:
+          - "/kalynow/assets"
+
+  services:
+    rustfs-api:
+      loadBalancer:
+        servers:
+          - url: "http://rustfs:9000"

@@ -24,6 +24,11 @@ providers:
     exposedByDefault: false
     network: kalyNow
 
+  # Dynamic file configuration (routes not tied to a Docker service)
+  file:
+    directory: "/etc/traefik/dynamic"
+    watch: true
+
 # Logging
 log:
   level: INFO
