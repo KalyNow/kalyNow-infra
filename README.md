@@ -1,116 +1,175 @@
 # kalyNow-infra
 
-Minimal infrastructure repository for the kalyNow microservices platform.
+Infrastructure locale kalyNow basée sur **Nomad + Consul + Vault + Traefik**.
 
-## Services
+## Services gérés dans ce repo
 
-| Service | Description | Local Port(s) |
-|---------|-------------|---------------|
-| [Traefik](https://traefik.io/) | API Gateway / Reverse Proxy | 80 (HTTP), 8080 (Dashboard) |
-| [Kafka](https://kafka.apache.org/) | Event streaming (KRaft mode) | 9092 |
-| [Redis](https://redis.io/) | In-memory cache / message broker | 6379 |
-| [PostgreSQL](https://www.postgresql.org/) | Relational database | 5432 |
-| [MongoDB](https://www.mongodb.com/) | Document database | 27017 |
-| [MinIO](https://min.io/) | S3-compatible object storage | 9000 (API), 9001 (Console) |
-| [ClickHouse](https://clickhouse.com/) | Analytical database | 8123 (HTTP), 9004 (Native) |
-| [Nomad](https://www.nomadproject.io/) | Workload orchestrator | 4646 |
+| Service | Description | Port local |
+|---------|-------------|-----------|
+| Nomad | Orchestrateur | 4646 |
+| Consul | Service discovery | 8500 |
+| Vault (dev) | Secrets | 8200 |
+| Traefik | API gateway / reverse proxy | 80, 8080 |
+| PostgreSQL | DB relationnelle | 5432 |
+| MongoDB | DB documentaire | 27017 |
+| RustFS | Stockage S3-compatible | 9000, 9001 |
+| user-service | API users | 3001 |
+| offer-service | API offers | 3000 |
 
-## Repository Layout
+## 1) Prérequis local
 
-```
-kalyNow-infra/
-├── docker-compose.yml          # Local development stack
-├── .env.example                # Environment variable template
-├── traefik/
-│   └── traefik.yml             # Traefik static configuration
-├── config/
-│   ├── redis/
-│   │   └── redis.conf          # Redis configuration
-│   └── clickhouse/
-│       └── users.xml           # ClickHouse user configuration
-└── nomad/
-    ├── config/
-    │   └── nomad.hcl           # Nomad agent configuration
-    └── jobs/
-        ├── traefik.nomad.hcl
-        ├── kafka.nomad.hcl
-        ├── redis.nomad.hcl
-        ├── postgres.nomad.hcl
-        ├── mongodb.nomad.hcl
-        ├── minio.nomad.hcl
-        └── clickhouse.nomad.hcl
-```
+- Linux
+- Docker Engine installé et démarré
+- `nomad` CLI/agent installé
+- `python3` (pour bootstrap Vault)
 
-## Quick Start (Docker Compose)
+### Installation rapide de Nomad (local)
 
-### Prerequisites
-
-- [Docker](https://docs.docker.com/get-docker/) ≥ 24
-- [Docker Compose](https://docs.docker.com/compose/) v2
-
-### 1. Configure environment variables
+Exemple binaire officiel :
 
 ```bash
-cp .env.example .env
-# Edit .env and set secure passwords
+curl -LO https://releases.hashicorp.com/nomad/1.11.3/nomad_1.11.3_linux_amd64.zip
+unzip nomad_1.11.3_linux_amd64.zip
+sudo install nomad /usr/local/bin/nomad
+nomad version
 ```
 
-### 2. Start all services
+## 2) Configuration Nomad locale
+
+Le fichier principal du repo est [nomad/config/nomad.hcl](nomad/config/nomad.hcl).  
+Copier dans la config locale Nomad :
 
 ```bash
-docker compose up -d
+sudo mkdir -p /etc/nomad.d
+sudo cp nomad/config/nomad.hcl /etc/nomad.d/nomad.hcl
 ```
 
-### 3. Verify services
+### Volumes hôtes requis
+
+Créer les dossiers des volumes persistants :
 
 ```bash
-docker compose ps
+sudo mkdir -p /opt/nomad/volumes/{postgres,mongodb,rustfs,kafka,redis,clickhouse}
 ```
 
-### 4. Stop all services
+Puis déclarer ces volumes dans Nomad (ex: `/etc/nomad.d/host_volumes.hcl`) :
 
-```bash
-docker compose down
+```hcl
+client {
+    host_volume "postgres_data" {
+        path      = "/opt/nomad/volumes/postgres"
+        read_only = false
+    }
+
+    host_volume "mongo_data" {
+        path      = "/opt/nomad/volumes/mongodb"
+        read_only = false
+    }
+
+    host_volume "rustfs_data" {
+        path      = "/opt/nomad/volumes/rustfs"
+        read_only = false
+    }
+
+    host_volume "kafka_data" {
+        path      = "/opt/nomad/volumes/kafka"
+        read_only = false
+    }
+
+    host_volume "redis_data" {
+        path      = "/opt/nomad/volumes/redis"
+        read_only = false
+    }
+
+    host_volume "clickhouse_data" {
+        path      = "/opt/nomad/volumes/clickhouse"
+        read_only = false
+    }
+}
 ```
 
-To also remove all persistent volumes:
+### Lancer Nomad en local
 
 ```bash
-docker compose down -v
+sudo mkdir -p /nomad/data
+nomad agent -config=/etc/nomad.d
 ```
 
-## Service UIs (local)
-
-| Service | URL |
-|---------|-----|
-| Traefik Dashboard | <http://localhost:8080> or <http://traefik.localhost> |
-| MinIO Console | <http://localhost:9001> or <http://minio.localhost> |
-| Nomad UI | <http://localhost:4646> or <http://nomad.localhost> |
-
-## Nomad Jobs
-
-The `nomad/jobs/` directory contains HCL job definitions for deploying each
-service via Nomad. These are designed for use with the Nomad agent started by
-`docker compose`.
-
-### Submit a job
+Dans un autre terminal :
 
 ```bash
-# Ensure Nomad is running
-export NOMAD_ADDR=http://localhost:4646
+export NOMAD_ADDR=http://127.0.0.1:4646
+```
 
-# Submit a job (example: PostgreSQL)
+## 3) Hostnames locaux (important pour Traefik)
+
+Ajouter dans `/etc/hosts` :
+
+```txt
+127.0.0.1 kalynow.mg traefik.kalynow.mg vault.kalynow.mg
+```
+
+## 4) Déploiement local (ordre recommandé)
+
+Depuis la racine `kalyNow-infra/` :
+
+```bash
+export NOMAD_ADDR=http://127.0.0.1:4646
+
+# 1) Discovery
+nomad job run nomad/jobs/consul.nomad.hcl
+
+# 2) Secrets
+nomad job run nomad/jobs/vault.nomad.hcl
+```
+
+Bootstrap Vault (une fois après reset) :
+
+```bash
+cp scripts/config.example.py scripts/config.py
+# éditer scripts/config.py
+python3 scripts/bootstrap_vault.py --config scripts/config.py
+```
+
+Puis déployer le reste :
+
+```bash
 nomad job run nomad/jobs/postgres.nomad.hcl
+nomad job run nomad/jobs/mongodb.nomad.hcl
+nomad job run nomad/jobs/rustfs.nomad.hcl
+
+nomad job run nomad/jobs/user-service.nomad.hcl
+nomad job run nomad/jobs/offer-service.nomad.hcl
+
+nomad job run nomad/jobs/traefik.nomad.hcl
 ```
 
-### Check job status
+## 5) URLs utiles en dev
+
+- Nomad UI: http://127.0.0.1:4646
+- Consul UI: http://127.0.0.1:8500
+- Vault UI: http://127.0.0.1:8200/ui
+- Traefik Dashboard: http://traefik.kalynow.mg
+- User Swagger: http://kalynow.mg/api/us/
+- Offer Swagger: http://kalynow.mg/api/of/
+
+## 6) Vérifications et commandes utiles
 
 ```bash
-nomad status postgres
+nomad status
+nomad status traefik
+nomad status user-service
+nomad status offer-service
+```
+
+Lister les routeurs Traefik chargés :
+
+```bash
+curl -s http://127.0.0.1:8080/api/http/routers | jq -r '.[].name'
 ```
 
 ## Notes
 
-- This setup is intended for **local development only**. Do not use it in production without additional hardening (TLS, secrets management, network policies, etc.).
-- Default passwords are defined in `.env.example`. Always change them before starting services.
-- Kafka runs in KRaft mode (no ZooKeeper required).
+- Setup **dev local uniquement**.
+- Vault est lancé en mode `-dev` dans ce projet.
+- Traefik lit les routes depuis Consul (`consulCatalog`), via les tags des jobs Nomad.

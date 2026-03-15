@@ -6,6 +6,7 @@ job "postgres" {
     count = 1
 
     network {
+      mode = "host"
       port "postgres" { static = 5432 }
     }
 
@@ -17,9 +18,21 @@ job "postgres" {
     task "postgres" {
       driver = "docker"
 
+      identity {
+        name         = "vault_default"
+        aud          = ["vault.io"]
+        change_mode  = "restart"
+        ttl          = "1h"
+      }
+
+      vault {
+        role        = "nomad-workloads"
+        change_mode = "restart"
+      }
+
       config {
-        image = "postgres:17-alpine"
-        ports = ["postgres"]
+        image        = "postgres:17-alpine"
+        network_mode = "host"
       }
 
       volume_mount {
@@ -31,10 +44,13 @@ job "postgres" {
         destination = "secrets/postgres.env"
         env         = true
         data        = <<EOF
-POSTGRES_DB={{ env "NOMAD_META_postgres_db" | default "kalyNow" }}
-POSTGRES_USER={{ env "NOMAD_META_postgres_user" | default "kalyNow" }}
-POSTGRES_PASSWORD={{ env "NOMAD_META_postgres_password" | default "changeme" }}
+{{- with secret "secret/data/kalynow/postgres" }}
+POSTGRES_DB={{ .Data.data.POSTGRES_DB }}
+POSTGRES_USER={{ .Data.data.POSTGRES_USER }}
+POSTGRES_PASSWORD={{ .Data.data.POSTGRES_PASSWORD }}
+{{- end }}
 EOF
+        change_mode = "restart"
       }
 
       resources {

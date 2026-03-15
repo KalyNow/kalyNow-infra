@@ -9,3 +9,9 @@
 .vscode/
 *.swp
 *.swo
+
+
+scripts/config.py
+
+*.pyc
+__pycache__/

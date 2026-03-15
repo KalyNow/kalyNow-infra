@@ -6,6 +6,7 @@ job "mongodb" {
     count = 1
 
     network {
+      mode = "host"
       port "mongodb" { static = 27017 }
     }
 
@@ -18,8 +19,8 @@ job "mongodb" {
       driver = "docker"
 
       config {
-        image = "mongo:8.0"
-        ports = ["mongodb"]
+        image        = "mongo:7.0"
+        network_mode = "host"
       }
 
       volume_mount {
@@ -27,23 +28,40 @@ job "mongodb" {
         destination = "/data/db"
       }
 
+      identity {
+        name        = "vault_default"
+        aud         = ["vault.io"]
+        change_mode = "restart"
+        ttl         = "1h"
+      }
+
+      vault {
+        role        = "nomad-workloads"
+        change_mode = "restart"
+      }
+
       template {
         destination = "secrets/mongo.env"
         env         = true
         data        = <<EOF
-MONGO_INITDB_ROOT_USERNAME={{ env "NOMAD_META_mongo_user" | default "kalyNow" }}
-MONGO_INITDB_ROOT_PASSWORD={{ env "NOMAD_META_mongo_password" | default "changeme" }}
+{{- with secret "secret/data/kalynow/mongodb" }}
+MONGO_INITDB_ROOT_USERNAME={{ .Data.data.MONGO_INITDB_ROOT_USERNAME }}
+MONGO_INITDB_ROOT_PASSWORD={{ .Data.data.MONGO_INITDB_ROOT_PASSWORD }}
+{{- end }}
 EOF
       }
 
       resources {
         cpu    = 300
-        memory = 256
+        memory = 1024
       }
 
       service {
         name = "mongodb"
         port = "mongodb"
+
+        # Internal service — not exposed via Traefik
+        tags = ["traefik.enable=false"]
 
         check {
           type     = "tcp"

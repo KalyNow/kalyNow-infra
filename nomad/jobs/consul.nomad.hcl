@@ -1,0 +1,54 @@
+# Consul — service discovery & health checking
+#
+# Runs in -dev mode: single node, in-memory, no persistence needed.
+# Nomad registers every job's service{} blocks here automatically.
+# Traefik reads this catalog via the consulCatalog provider.
+#
+# UI:  http://localhost:8500
+
+job "consul" {
+  datacenters = ["dc1"]
+  type        = "service"
+
+  # Run before everything else
+  priority = 90
+
+  group "consul" {
+    count = 1
+
+    network {
+      port "http" { static = 8500 }
+      port "dns"  { static = 8600 }
+    }
+
+    task "consul" {
+      driver = "docker"
+
+      # Render a startup script that injects the node's primary IP at runtime
+      template {
+        data        = <<-EOF
+          #!/bin/sh
+          BIND_IP=$(ip route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1); exit}')
+          exec consul agent -dev -client=0.0.0.0 -bind="$BIND_IP" -ui
+          EOF
+        destination = "local/start.sh"
+        perms       = "755"
+      }
+
+      config {
+        image        = "hashicorp/consul:1.20"
+        network_mode = "host"
+        command      = "/bin/sh"
+        args         = ["local/start.sh"]
+        volumes      = ["local/start.sh:/local/start.sh"]
+      }
+
+      resources {
+        cpu    = 200
+        memory = 128
+      }
+
+      # No service{} block here — Consul registers itself
+    }
+  }
+}

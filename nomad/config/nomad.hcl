@@ -13,9 +13,29 @@ server {
 
 client {
   enabled = true
-  # Use the raw_exec driver so Docker tasks can be submitted from Nomad jobs
+
   options = {
     "driver.raw_exec.enable" = "1"
+  }
+}
+
+# Consul integration — Nomad registers every service automatically
+consul {
+  address = "127.0.0.1:8500"
+}
+
+# Vault integration — Workload Identity (JWT)
+# Each task gets a short-lived JWT that Vault validates via its JWKS endpoint.
+# No static Vault token needed on the Nomad side.
+vault {
+  enabled = true
+  address = "http://127.0.0.1:8200"
+
+  default_identity {
+    aud  = ["vault.io"]
+    env  = false
+    file = true
+    ttl  = "1h"
   }
 }
 

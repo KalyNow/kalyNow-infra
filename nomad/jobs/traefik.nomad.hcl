@@ -1,3 +1,12 @@
+# Traefik — API gateway + reverse proxy
+#
+# Reads service routes from Consul catalog (tags on each service{} block).
+# No Docker socket, no static file routes — pure service discovery.
+#
+# Entrypoints:
+#   web       :80   → HTTP traffic (kalynow.mg)
+#   traefik   :8080 → dashboard (traefik.kalynow.mg)
+
 job "traefik" {
   datacenters = ["dc1"]
   type        = "service"
@@ -14,16 +23,12 @@ job "traefik" {
       driver = "docker"
 
       config {
-        image = "traefik:v3.3"
-        ports = ["http", "dashboard"]
-        args  = ["--configFile=/etc/traefik/traefik.yml"]
-
-        volumes = [
-          "/var/run/docker.sock:/var/run/docker.sock:ro",
-          "local/traefik.yml:/etc/traefik/traefik.yml",
-        ]
+        image        = "traefik:v3.3"
+        network_mode = "host"
+        args         = ["--configFile=/local/traefik.yml"]
       }
 
+      # Traefik static config — injected at runtime via Nomad template
       template {
         destination = "local/traefik.yml"
         data        = <<EOF
@@ -38,12 +43,18 @@ api:
 entryPoints:
   web:
     address: ":80"
+  traefik:
+    address: ":8080"
 
+# Consul catalog provider — routes discovered from service tags
+# No Docker socket, no static files needed
 providers:
-  docker:
-    endpoint: "unix:///var/run/docker.sock"
+  consulCatalog:
+    endpoint:
+      address: "127.0.0.1:8500"
     exposedByDefault: false
-    network: kalyNow
+    prefix: traefik
+    refreshInterval: 5s
 
 log:
   level: INFO
@@ -60,6 +71,13 @@ EOF
       service {
         name = "traefik"
         port = "dashboard"
+
+        tags = [
+          "traefik.enable=true",
+          "traefik.http.routers.traefik-ui.rule=Host(`traefik.kalynow.mg`)",
+          "traefik.http.routers.traefik-ui.service=api@internal",
+          "traefik.http.routers.traefik-ui.entrypoints=web",
+        ]
 
         check {
           type     = "http"

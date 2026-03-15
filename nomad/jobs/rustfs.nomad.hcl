@@ -29,12 +29,26 @@ job "rustfs" {
         destination = "/data"
       }
 
+      identity {
+        name        = "vault_default"
+        aud         = ["vault.io"]
+        change_mode = "restart"
+        ttl         = "1h"
+      }
+
+      vault {
+        role        = "nomad-workloads"
+        change_mode = "restart"
+      }
+
       template {
         destination = "secrets/rustfs.env"
         env         = true
         data        = <<EOF
-RUSTFS_ACCESS_KEY={{ env "NOMAD_META_rustfs_access_key" | default "rustfsadmin" }}
-RUSTFS_SECRET_KEY={{ env "NOMAD_META_rustfs_secret_key" | default "changeme" }}
+{{- with secret "secret/data/kalynow/rustfs" }}
+RUSTFS_ACCESS_KEY={{ .Data.data.RUSTFS_ACCESS_KEY }}
+RUSTFS_SECRET_KEY={{ .Data.data.RUSTFS_SECRET_KEY }}
+{{- end }}
 RUSTFS_CONSOLE_ENABLE=true
 EOF
       }
@@ -47,6 +61,15 @@ EOF
       service {
         name = "rustfs-api"
         port = "api"
+
+        tags = [
+          "traefik.enable=true",
+          "traefik.http.routers.rustfs.rule=Host(`kalynow.mg`) && PathPrefix(`/api/as`)",
+          "traefik.http.routers.rustfs.entrypoints=web",
+          "traefik.http.routers.rustfs.middlewares=strip-assets-prefix",
+          "traefik.http.middlewares.strip-assets-prefix.stripprefix.prefixes=/api/as",
+          "traefik.http.services.rustfs-api.loadbalancer.server.port=9000",
+        ]
 
         check {
           type     = "http"
