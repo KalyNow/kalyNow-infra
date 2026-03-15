@@ -62,7 +62,16 @@ EOF
           "traefik.enable=true",
           "traefik.http.routers.users.rule=Host(`kalynow.mg`) && PathPrefix(`/api/us`)",
           "traefik.http.routers.users.entrypoints=web",
-          "traefik.http.routers.users.middlewares=users-trailing-slash,users-docs-shortcut,strip-users-prefix",
+          "traefik.http.routers.users.middlewares=users-cors,users-trailing-slash,users-docs-shortcut,strip-users-prefix",
+
+          # CORS — autorise localhost (dev) + kalynow.mg (prod)
+          "traefik.http.middlewares.users-cors.headers.accesscontrolallowmethods=GET,POST,PUT,PATCH,DELETE,OPTIONS",
+          "traefik.http.middlewares.users-cors.headers.accesscontrolalloworiginlist=http://localhost:5173,http://localhost:3000,http://localhost:4173,https://kalynow.mg,http://kalynow.mg",
+          "traefik.http.middlewares.users-cors.headers.accesscontrolallowheaders=Content-Type,Authorization,Accept,X-Requested-With",
+          "traefik.http.middlewares.users-cors.headers.accesscontrolexposeheaders=Authorization",
+          "traefik.http.middlewares.users-cors.headers.accesscontrolmaxage=86400",
+          "traefik.http.middlewares.users-cors.headers.addvaryheader=true",
+
           "traefik.http.middlewares.users-trailing-slash.redirectregex.regex=^https?://kalynow\\.mg/api/us$",
           "traefik.http.middlewares.users-trailing-slash.redirectregex.replacement=http://kalynow.mg/api/us/",
           "traefik.http.middlewares.users-trailing-slash.redirectregex.permanent=true",
