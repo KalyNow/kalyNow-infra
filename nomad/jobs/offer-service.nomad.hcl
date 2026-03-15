@@ -14,7 +14,7 @@ job "offer-service" {
     count = 1
 
     network {
-      port "http" { static = 3000 }
+      port "http" {}
     }
 
     task "offer-service" {
@@ -44,7 +44,7 @@ job "offer-service" {
         destination = "secrets/offer.env"
         env         = true
         data        = <<EOF
-PORT=3000
+PORT={{ env "NOMAD_PORT_http" }}
 {{ with secret "secret/data/kalynow/offer-service" }}
 MONGODB_URI={{ .Data.data.MONGODB_URI }}
 # Same node IP as this task (dynamic, no hardcoded host IP)
@@ -70,14 +70,17 @@ EOF
           "traefik.enable=true",
           "traefik.http.routers.offers.rule=Host(`kalynow.mg`) && PathPrefix(`/api/of`)",
           "traefik.http.routers.offers.entrypoints=web",
-          "traefik.http.routers.offers.middlewares=offers-trailing-slash,offers-docs-shortcut,strip-offers-prefix",
+          "traefik.http.routers.offers.middlewares=offers-trailing-slash,offers-docs-shortcut,offers-auth,strip-offers-prefix",
           "traefik.http.middlewares.offers-trailing-slash.redirectregex.regex=^https?://kalynow\\.mg/api/of$",
           "traefik.http.middlewares.offers-trailing-slash.redirectregex.replacement=http://kalynow.mg/api/of/",
           "traefik.http.middlewares.offers-trailing-slash.redirectregex.permanent=true",
           "traefik.http.middlewares.offers-docs-shortcut.replacepathregex.regex=^/api/of/?$",
           "traefik.http.middlewares.offers-docs-shortcut.replacepathregex.replacement=/api",
+          "traefik.http.middlewares.offers-auth.forwardauth.address=http://kalynow.mg/api/us/auth/verify",
+          "traefik.http.middlewares.offers-auth.forwardauth.trustForwardHeader=true",
+          "traefik.http.middlewares.offers-auth.forwardauth.authRequestHeaders=Authorization",
+          "traefik.http.middlewares.offers-auth.forwardauth.authResponseHeaders=X-User-Id,X-User-Email,X-User-Role",
           "traefik.http.middlewares.strip-offers-prefix.stripprefix.prefixes=/api/of",
-          "traefik.http.services.offer-service.loadbalancer.server.port=3000",
         ]
 
         check {

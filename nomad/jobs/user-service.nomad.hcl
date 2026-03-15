@@ -10,7 +10,7 @@ job "user-service" {
     count = 1
 
     network {
-      port "http" { static = 3001 }
+      port "http" {}
     }
 
     task "user-service" {
@@ -40,7 +40,7 @@ job "user-service" {
         destination = "secrets/user.env"
         env         = true
         data        = <<EOF
-PORT=3001
+PORT={{ env "NOMAD_PORT_http" }}
 {{- with secret "secret/data/kalynow/user-service" }}
 DATABASE_URL={{ .Data.data.DATABASE_URL }}
 JWT_SECRET={{ .Data.data.JWT_SECRET }}
@@ -69,7 +69,6 @@ EOF
           "traefik.http.middlewares.users-docs-shortcut.replacepathregex.regex=^/api/us/?$",
           "traefik.http.middlewares.users-docs-shortcut.replacepathregex.replacement=/api",
           "traefik.http.middlewares.strip-users-prefix.stripprefix.prefixes=/api/us",
-          "traefik.http.services.user-service.loadbalancer.server.port=3001",
         ]
 
         check {

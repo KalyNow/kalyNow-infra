@@ -72,8 +72,7 @@ EOF
         ]
 
         check {
-          type     = "http"
-          path     = "/health/live"
+          type     = "tcp"
           port     = "api"
           interval = "10s"
           timeout  = "2s"
