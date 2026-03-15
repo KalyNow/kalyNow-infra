@@ -1,25 +1,33 @@
 # KalyNow – HashiCorp Vault
 #
-# Runs Vault in dev mode (single-node, in-memory).
-# Root token = "root"  →  set VAULT_TOKEN=root in your shell.
+# Runs Vault in SERVER mode with file storage — state persists across restarts.
+# Secrets are stored in /opt/nomad/volumes/vault on the host.
 #
-# After first deploy, bootstrap secrets with:
+# The Vault server config is inlined in the template{} block below.
+# The canonical copy lives in config/vault/vault.hcl — keep them in sync.
+#   1. Deploy this job:
+#        nomad job run nomad/jobs/vault.nomad.hcl
 #
-#   cp scripts/config.example.py scripts/config.py
-#   # Fill in config.py with your credentials
-#   python3 scripts/bootstrap_vault.py --config scripts/config.py
+#   2. Initialize Vault (once, generates root token + unseal keys):
+#        python3 scripts/bootstrap_vault.py --init --config scripts/config.py
+#      This writes scripts/.vault-init.json  ← keep this file safe & private!
+#      It also sets VAULT_TOKEN in config.py automatically.
 #
-# This will:
-#   1. Enable KV v2 secrets engine
-#   2. Write kalynow-services policy
-#   3. Enable JWT auth backend for Nomad Workload Identity
-#   4. Write all infra + service secrets
+#   3. Bootstrap all secrets (once):
+#        python3 scripts/bootstrap_vault.py --config scripts/config.py
+#
+# ── After every Vault restart (host reboot, container restart) ────────────────
+#   Vault starts sealed — unseal it in one command:
+#        python3 scripts/bootstrap_vault.py --unseal-only --config scripts/config.py
+#
+# ── After a full wipe (volume deleted) ───────────────────────────────────────
+#   Repeat steps 2 and 3 above.
 #
 # Auth: Nomad tasks authenticate via Workload Identity (JWT).
-#       No static Vault token is needed on Nomad side.
+#       No static Vault token is needed on the Nomad side.
 #
 # Deploy:  nomad job run nomad/jobs/vault.nomad.hcl
-# UI:      http://127.0.0.1:8200/ui  (token: root)
+# UI:      http://127.0.0.1:8200/ui
 
 job "vault" {
   datacenters = ["dc1"]
@@ -33,6 +41,12 @@ job "vault" {
       port "cluster" { static = 8201 }
     }
 
+    # Persistent volume — survives container and host restarts
+    volume "vault_data" {
+      type   = "host"
+      source = "vault_data"
+    }
+
     task "vault" {
       driver = "docker"
 
@@ -43,17 +57,41 @@ job "vault" {
 
         args = [
           "server",
-          "-dev",
-          "-dev-root-token-id=root",
-          "-dev-listen-address=0.0.0.0:8200",
+            "-config=/local/vault.hcl",
         ]
       }
 
+      # Inline Vault server config — keep in sync with config/vault/vault.hcl
+      template {
+          destination = "local/vault.hcl"
+        change_mode = "restart"
+        data        = <<EOF
+storage "file" {
+  path = "/vault/data"
+}
+
+listener "tcp" {
+  address     = "0.0.0.0:8200"
+  tls_disable = true
+}
+
+cluster_addr = "http://127.0.0.1:8201"
+api_addr     = "http://127.0.0.1:8200"
+
+ui = true
+
+disable_mlock = true
+EOF
+      }
+
+      volume_mount {
+        volume      = "vault_data"
+        destination = "/vault/data"
+      }
+
       env {
-        VAULT_DEV_ROOT_TOKEN_ID = "root"
-        VAULT_ADDR              = "http://127.0.0.1:8200"
-        # Disable mlock — required when IPC_LOCK capability is unavailable (Podman dev mode)
-        VAULT_DISABLE_MLOCK     = "true"
+        VAULT_ADDR          = "http://127.0.0.1:8200"
+        VAULT_DISABLE_MLOCK = "true"
       }
 
       resources {
@@ -72,9 +110,12 @@ job "vault" {
           "traefik.http.services.vault.loadbalancer.server.port=8200",
         ]
 
+        # /v1/sys/health returns 200 when initialized+unsealed,
+        # 429 when standby, 501 when not initialized, 503 when sealed.
+        # Nomad marks the service healthy on any 2xx/429.
         check {
           type     = "http"
-          path     = "/v1/sys/health"
+          path     = "/v1/sys/health?standbyok=true&uninitcode=200&sealedcode=200"
           port     = "http"
           interval = "10s"
           timeout  = "3s"

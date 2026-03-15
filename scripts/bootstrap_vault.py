@@ -2,12 +2,31 @@
 """
 bootstrap_vault.py
 ==================
-Bootstraps all Vault secrets for the KalyNow stack.
-Run this ONCE after each Vault restart (dev mode wipes secrets on restart).
+Manages Vault initialization, unsealing, and secret bootstrapping for KalyNow.
 
-Usage:
-    python3 scripts/bootstrap_vault.py --config scripts/config.py
-    python3 scripts/bootstrap_vault.py --config scripts/config.py --dry-run
+Modes
+-----
+  --init           Initialize Vault (first-time only). Generates root token +
+                   unseal keys, saves them to scripts/.vault-init.json, and
+                   patches VAULT_TOKEN into config.py automatically.
+
+  --unseal-only    Unseal Vault after a restart (uses .vault-init.json).
+                   Run this every time the Vault container restarts.
+
+  (default)        Full bootstrap: enable engines, write policy, configure JWT
+                   auth, write all secrets. Requires Vault to be initialized and
+                   unsealed. Safe to re-run (idempotent).
+
+  --dry-run        Show what would be written without making changes (default mode only).
+
+Usage
+-----
+  # First time:
+  python3 scripts/bootstrap_vault.py --init --config scripts/config.py
+  python3 scripts/bootstrap_vault.py --config scripts/config.py
+
+  # After every restart:
+  python3 scripts/bootstrap_vault.py --unseal-only --config scripts/config.py
 
 No third-party dependencies — stdlib only.
 """
@@ -16,6 +35,7 @@ import argparse
 import importlib.util
 import json
 import sys
+import time
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -54,18 +74,21 @@ def require(cfg: dict, *names: str) -> dict:
     return result
 
 
-def vault_request(method: str, url: str, token: str, payload: dict | None = None) -> dict:
+def vault_request(
+    method: str,
+    url: str,
+    token: str,
+    payload: dict | None = None,
+    allow_no_token: bool = False,
+) -> dict:
     """Perform a Vault API call and return the parsed JSON response."""
     data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(
-        url,
-        data=data,
-        method=method,
-        headers={
-            "X-Vault-Token": token,
-            "Content-Type": "application/json",
-        },
-    )
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["X-Vault-Token"] = token
+    elif not allow_no_token:
+        die("No Vault token available. Run --init first or set VAULT_TOKEN in config.py.")
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req) as resp:
             body = resp.read()
@@ -97,6 +120,147 @@ def die(msg: str) -> None:
 
 def ok(msg: str) -> None:
     print(f"  ✓ {msg}")
+
+
+# ---------------------------------------------------------------------------
+# Init helpers
+# ---------------------------------------------------------------------------
+
+INIT_FILE = Path(__file__).parent / ".vault-init.json"
+
+
+def wait_for_vault(base_url: str, timeout: int = 30) -> None:
+    """Wait until Vault's HTTP listener is up (any response)."""
+    print(f"  Waiting for Vault at {base_url} ...", end="", flush=True)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(f"{base_url}/v1/sys/health?uninitcode=200&sealedcode=200", timeout=2)
+            print(" up")
+            return
+        except Exception:
+            print(".", end="", flush=True)
+            time.sleep(1)
+    print()
+    die(f"Vault did not respond within {timeout}s. Is the job running?")
+
+
+def step_init(base_url: str, config_path: str) -> None:
+    """Initialize Vault, save keys/token to .vault-init.json, patch config.py."""
+    print("[init] Checking Vault status...")
+
+    wait_for_vault(base_url)
+
+    # Check if already initialized
+    status_resp = vault_request("GET", f"{base_url}/v1/sys/init", token="", payload=None, allow_no_token=True)
+    if status_resp.get("initialized"):
+        print("  Vault is already initialized.")
+        if INIT_FILE.exists():
+            ok(f"Init file already exists: {INIT_FILE}")
+            _patch_config_token(config_path)
+        else:
+            die(
+                f"Vault is initialized but {INIT_FILE} not found.\n"
+                "  If you lost the init file, you must unseal manually with your existing keys.\n"
+                "  Then set VAULT_TOKEN in config.py to your root token."
+            )
+        return
+
+    print("[init] Initializing Vault (1 key share for local dev)...")
+    result = vault_request(
+        "PUT",
+        f"{base_url}/v1/sys/init",
+        token="",
+        payload={"secret_shares": 1, "secret_threshold": 1},
+        allow_no_token=True,
+    )
+
+    init_data = {
+        "unseal_keys_b64": result["keys_base64"],
+        "root_token": result["root_token"],
+    }
+
+    INIT_FILE.write_text(json.dumps(init_data, indent=2))
+    INIT_FILE.chmod(0o600)
+    ok(f"Init data saved to {INIT_FILE}  ← keep this file safe!")
+
+    # Unseal immediately
+    _do_unseal(base_url, init_data["unseal_keys_b64"])
+
+    # Patch config.py
+    _patch_config_token(config_path, init_data["root_token"])
+
+    print("\n  Vault is now initialized, unsealed, and ready for bootstrap.")
+    print(f"  Root token has been written to config.py as VAULT_TOKEN.")
+    print(f"\n  Next step:\n    python3 scripts/bootstrap_vault.py --config {config_path}\n")
+
+
+def step_unseal_only(base_url: str) -> None:
+    """Unseal Vault using keys from .vault-init.json."""
+    print("[unseal] Unsealing Vault...")
+
+    if not INIT_FILE.exists():
+        die(
+            f"{INIT_FILE} not found.\n"
+            "  Run --init first, or manually create the file with your unseal keys."
+        )
+
+    wait_for_vault(base_url)
+
+    init_data = json.loads(INIT_FILE.read_text())
+    keys = init_data.get("unseal_keys_b64", [])
+    if not keys:
+        die(f"No unseal keys found in {INIT_FILE}")
+
+    # Check current seal status
+    status = vault_request("GET", f"{base_url}/v1/sys/seal-status", token="", allow_no_token=True)
+    if not status.get("sealed", True):
+        ok("Vault is already unsealed — nothing to do.")
+        return
+
+    _do_unseal(base_url, keys)
+    print("\n  Vault is unsealed and ready. ✅")
+
+
+def _do_unseal(base_url: str, keys: list) -> None:
+    for key in keys:
+        result = vault_request(
+            "PUT",
+            f"{base_url}/v1/sys/unseal",
+            token="",
+            payload={"key": key},
+            allow_no_token=True,
+        )
+        if not result.get("sealed", True):
+            ok("Vault unsealed")
+            return
+    die("Failed to unseal Vault — all keys submitted but Vault is still sealed.")
+
+
+def _patch_config_token(config_path: str, token: str | None = None) -> None:
+    """Write/replace VAULT_TOKEN in config.py with the root token."""
+    p = Path(config_path)
+    if not p.exists():
+        return
+    if token is None:
+        # Already initialized — read from init file
+        if INIT_FILE.exists():
+            token = json.loads(INIT_FILE.read_text()).get("root_token", "")
+        if not token:
+            return
+
+    content = p.read_text()
+    import re
+    patched = re.sub(
+        r'^(VAULT_TOKEN\s*=\s*).*$',
+        f'VAULT_TOKEN = "{token}"',
+        content,
+        flags=re.MULTILINE,
+    )
+    if patched == content and 'VAULT_TOKEN' not in content:
+        patched = content + f'\nVAULT_TOKEN = "{token}"\n'
+    p.write_text(patched)
+    ok(f"VAULT_TOKEN patched in {config_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -314,12 +478,34 @@ def main() -> None:
         "--config", metavar="FILE", default="scripts/config.py",
         help="Path to config.py (default: scripts/config.py)",
     )
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be written without making changes")
+    parser.add_argument(
+        "--init", action="store_true",
+        help="Initialize Vault (first time only). Saves keys to scripts/.vault-init.json.",
+    )
+    parser.add_argument(
+        "--unseal-only", action="store_true",
+        help="Unseal Vault using saved keys (run after every restart).",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Show what would be written without making changes (bootstrap mode only).",
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    base_url = cfg.get("VAULT_ADDR", "http://127.0.0.1:8200").rstrip("/")
 
-    # Validate required fields
+    # ── Init mode ──────────────────────────────────────────────────────────────
+    if args.init:
+        step_init(base_url, args.config)
+        return
+
+    # ── Unseal-only mode ───────────────────────────────────────────────────────
+    if args.unseal_only:
+        step_unseal_only(base_url)
+        return
+
+    # ── Full bootstrap mode ────────────────────────────────────────────────────
     require(cfg,
         "VAULT_ADDR", "VAULT_TOKEN",
         "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD",
@@ -327,9 +513,15 @@ def main() -> None:
         "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY",
         "USER_SERVICE_JWT_SECRET",
     )
+    token = cfg["VAULT_TOKEN"]
 
-    base_url = cfg["VAULT_ADDR"].rstrip("/")
-    token    = cfg["VAULT_TOKEN"]
+    # Auto-unseal before bootstrapping if keys are available
+    if INIT_FILE.exists():
+        status = vault_request("GET", f"{base_url}/v1/sys/seal-status", token="", allow_no_token=True)
+        if status.get("sealed", False):
+            print("Vault is sealed — unsealing before bootstrap...")
+            step_unseal_only(base_url)
+            print()
 
     if args.dry_run:
         print("⚠️  DRY-RUN MODE — no changes will be made\n")

@@ -12,6 +12,7 @@
 
 
 scripts/config.py
+scripts/.vault-init.json
 
 *.pyc
 __pycache__/

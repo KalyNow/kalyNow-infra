@@ -16,6 +16,8 @@ Remove config.py after use, or keep it safe if you need it for future reference.
 
 # ── Vault ─────────────────────────────────────────────────────────────────────
 VAULT_ADDR  = "http://127.0.0.1:8200"
+# Leave empty — `--init` will generate a root token and fill this in automatically.
+# Do NOT set this to "root" (that was the old dev-mode token).
 VAULT_TOKEN = ""
 
 # ── Nomad (used to derive JWKS URL for Vault JWT auth) ────────────────────────
