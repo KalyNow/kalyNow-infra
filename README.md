@@ -49,7 +49,7 @@ sudo cp nomad/config/nomad.hcl /etc/nomad.d/nomad.hcl
 Créer les dossiers des volumes persistants :
 
 ```bash
-sudo mkdir -p /opt/nomad/volumes/{postgres,mongodb,rustfs,kafka,redis,clickhouse}
+sudo mkdir -p /opt/nomad/volumes/{postgres,mongodb,rustfs}
 ```
 
 Puis déclarer ces volumes dans Nomad (ex: `/etc/nomad.d/host_volumes.hcl`) :
@@ -68,21 +68,6 @@ client {
 
     host_volume "rustfs_data" {
         path      = "/opt/nomad/volumes/rustfs"
-        read_only = false
-    }
-
-    host_volume "kafka_data" {
-        path      = "/opt/nomad/volumes/kafka"
-        read_only = false
-    }
-
-    host_volume "redis_data" {
-        path      = "/opt/nomad/volumes/redis"
-        read_only = false
-    }
-
-    host_volume "clickhouse_data" {
-        path      = "/opt/nomad/volumes/clickhouse"
         read_only = false
     }
 }
