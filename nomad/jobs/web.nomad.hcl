@@ -37,8 +37,7 @@ variable "domain" {
   default = "kalynow.mg"
 }
 
-variable "fo= "restart"
-        data        rce_pull" {
+variable "force_pull" {
   type    = bool
   default = false
 }

@@ -8,9 +8,12 @@
 #   make status
 #   make logs JOB=user-service
 
-ENV  ?= local
-JOB  ?=
-VARS  = environments/$(ENV)/jobs/$(JOB).vars
+ENV        ?= local
+JOB        ?=
+IP         ?=
+SERVER_IP  ?=
+VAULT_NODE ?=
+VARS        = environments/$(ENV)/jobs/$(JOB).vars
 
 .PHONY: help deploy job stop stop-all status logs plan lint
 
@@ -36,8 +39,7 @@ deploy:
 
 ## job: Deploy a single job  (ENV=local|prod  JOB=<name>)
 job:
-	@bash scriptge-lock.json  README.md  TEMPLATE_CONTENT.md  tsconfig.node.json
-gaetan@fedora:~/DATA/Dev/kalyNow/kalyNow-web$ docker build -t web:locals/deploy.sh $(ENV) $(JOB)
+	@bash scripts/deploy.sh $(ENV) $(JOB)
 
 ## stop: Stop a single job  (JOB=<name>)
 stop:
@@ -89,3 +91,15 @@ vault-init:
 ## vault-bootstrap: Bootstrap all Vault secrets (first time only)
 vault-bootstrap:
 	python3 scripts/bootstrap_vault.py --config scripts/config.py
+
+## setup-node: Bootstrap a new node — copy configs + create volumes
+## Server node : make setup-node IP=<this-ip> VAULT_NODE=true
+## Client node : make setup-node IP=<this-ip> SERVER_IP=<server-ip>
+setup-node:
+	@if [ -z "$(IP)" ]; then echo "\n\033[31m❌  IP is required. Usage: make setup-node IP=<ip> [VAULT_NODE=true] [SERVER_IP=<ip>]\033[0m\n"; exit 1; fi
+	@if [ "$(VAULT_NODE)" = "true" ]; then \
+		sudo bash scripts/setup_node.sh --advertise-ip $(IP) --vault-node; \
+	else \
+		if [ -z "$(SERVER_IP)" ]; then echo "\n\033[31m❌  SERVER_IP is required for client nodes. Usage: make setup-node IP=<ip> SERVER_IP=<server-ip>\033[0m\n"; exit 1; fi; \
+		sudo bash scripts/setup_node.sh --advertise-ip $(IP) --server-ip $(SERVER_IP); \
+	fi

@@ -36,6 +36,7 @@ import importlib.util
 import json
 import sys
 import time
+import urllib.parse
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -301,7 +302,7 @@ def step_policy(base_url: str, token: str, dry_run: bool) -> None:
 
 def step_jwt_auth(base_url: str, token: str, cfg: dict, dry_run: bool) -> None:
     """Enable JWT auth method and create a role for Nomad Workload Identity."""
-    nomad_addr = cfg.get("NOMAD_ADDR", "http://127.0.0.1:4646")
+    nomad_addr = cfg.get("NOMAD_ADDR", "https://127.0.0.1:4646")
     jwks_url = f"{nomad_addr}/.well-known/jwks.json"
 
     print("[3/7] Enabling JWT auth backend for Nomad Workload Identity...")
@@ -323,15 +324,25 @@ def step_jwt_auth(base_url: str, token: str, cfg: dict, dry_run: bool) -> None:
         ok("auth/jwt-nomad enabled")
 
     # Configure JWT auth to use Nomad's JWKS endpoint
+    jwt_config: dict = {
+        "jwks_url": jwks_url,
+        "jwt_supported_algs": ["RS256", "EdDSA"],
+        "default_role": "nomad-workloads",
+    }
+    # If Nomad uses a self-signed cert, pass the CA so Vault can validate it
+    ca_cert_path = cfg.get("NOMAD_CA_CERT", "")
+    if ca_cert_path:
+        ca_path = Path(ca_cert_path)
+        if ca_path.exists():
+            jwt_config["jwks_ca_pem"] = ca_path.read_text()
+            ok(f"Using Nomad CA cert: {ca_cert_path}")
+        else:
+            print(f"  ⚠️  NOMAD_CA_CERT path not found: {ca_cert_path} — skipping CA")
     vault_request(
         "POST",
         f"{base_url}/v1/auth/jwt-nomad/config",
         token,
-        {
-            "jwks_url": jwks_url,
-            "jwt_supported_algs": ["RS256", "EdDSA"],
-            "default_role": "nomad-workloads",
-        },
+        jwt_config,
     )
     ok(f"auth/jwt-nomad config (jwks_url={jwks_url})")
 
@@ -363,15 +374,16 @@ def derive_secrets(cfg: dict) -> dict:
     """
     Derive composite secrets (URLs) from individual credentials.
     Explicit values in config take precedence over derived ones.
+    Passwords are URL-encoded so special characters (e.g. @) don't break URI parsing.
     """
     pg_user  = cfg["POSTGRES_USER"]
-    pg_pass  = cfg["POSTGRES_PASSWORD"]
+    pg_pass  = urllib.parse.quote(cfg["POSTGRES_PASSWORD"], safe='')
     pg_host  = cfg.get("POSTGRES_HOST", "127.0.0.1")
     pg_port  = cfg.get("POSTGRES_PORT", "5432")
     pg_db    = cfg.get("USER_SERVICE_DB_NAME") or cfg["POSTGRES_DB"]
 
     mongo_user = cfg["MONGO_ROOT_USERNAME"]
-    mongo_pass = cfg["MONGO_ROOT_PASSWORD"]
+    mongo_pass = urllib.parse.quote(cfg["MONGO_ROOT_PASSWORD"], safe='')
     mongo_host = cfg.get("MONGO_HOST", "127.0.0.1")
     mongo_port = cfg.get("MONGO_PORT", "27017")
     mongo_db   = cfg.get("OFFER_SERVICE_DB_NAME") or "kalynow-offer-service"

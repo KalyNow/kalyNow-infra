@@ -28,13 +28,12 @@ variable "consul_memory" {
 
 job "consul" {
   datacenters = [var.datacenter]
-  type        = "service"
+  type        = "system"
 
   # Run before everything else
   priority = 90
 
   group "consul" {
-    count = 1
 
     network {
       port "http" { static = 8500 }

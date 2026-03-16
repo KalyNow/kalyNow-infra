@@ -31,7 +31,7 @@ echo "Creating Nomad host volumes in ${BASE_DIR}"
 # Generic service data volumes
 create_volume postgres root:root "$DEFAULT_MODE"
 create_volume mongodb root:root "$DEFAULT_MODE"
-create_volume rustfs root:root "$DEFAULT_MODE"
+create_volume rustfs 10001:10001 "$DEFAULT_MODE"
 create_volume kafka root:root "$DEFAULT_MODE"
 create_volume redis root:root "$DEFAULT_MODE"
 create_volume clickhouse root:root "$DEFAULT_MODE"

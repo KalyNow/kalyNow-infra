@@ -49,10 +49,10 @@ run_job() {
 
     if [[ -f "$vars" ]]; then
         echo "🚀  Deploying ${job} (${ENV})..."
-        nomad job run -var-file="${vars}" "${file}"
+        nomad job run -detach -var-file="${vars}" "${file}"
     else
         echo "⚠️   No var-file for ${job} — deploying with defaults"
-        nomad job run "${file}"
+        nomad job run -detach "${file}"
     fi
 }
 
@@ -150,7 +150,7 @@ run_job vault
 echo ""
 echo "⏳  Waiting for Vault to be reachable..."
 VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}"
-for i in $(seq 1 20); do
+for i in $(seq 1 40); do
     STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${VAULT_ADDR}/v1/sys/health" || true)
     # 200 = ready, 429 = standby, 473 = performance standby — all usable
     # 501 = not initialized, 503 = sealed — need action
@@ -171,6 +171,9 @@ for i in $(seq 1 20); do
             echo "🔒  Vault is SEALED. Unsealing..."
             python3 scripts/bootstrap_vault.py --unseal-only --config scripts/config.py
             echo "✅  Vault unsealed."
+            echo "🔑  Re-bootstrapping secrets to ensure they are present..."
+            python3 scripts/bootstrap_vault.py --config scripts/config.py
+            echo "✅  Bootstrap complete."
         else
             echo "🔒  Vault is SEALED but no unseal keys found — wiping and re-initializing..."
             echo "    Stopping Vault job..."
@@ -204,7 +207,7 @@ for i in $(seq 1 20); do
         fi
         break
     else
-        echo "   Attempt ${i}/20 — Vault not reachable yet (HTTP ${STATUS_CODE:-000}), retrying in 3s..."
+        echo "   Attempt ${i}/40 — Vault not reachable yet (HTTP ${STATUS_CODE:-000}), retrying in 3s..."
         sleep 3
     fi
 done

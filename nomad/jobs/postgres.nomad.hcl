@@ -20,7 +20,7 @@ variable "postgres_cpu" {
 
 variable "postgres_memory" {
   type    = number
-  default = 256local
+  default = 256
 }
 
 variable "vault_role" {
@@ -84,6 +84,7 @@ POSTGRES_DB={{ .Data.data.POSTGRES_DB }}
 POSTGRES_USER={{ .Data.data.POSTGRES_USER }}
 POSTGRES_PASSWORD={{ .Data.data.POSTGRES_PASSWORD }}
 {{- end }}
+PGPORT={{ env "NOMAD_PORT_postgres" }}
 EOF
         change_mode = "restart"
       }

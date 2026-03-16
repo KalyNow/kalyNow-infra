@@ -58,6 +58,13 @@ job "vault" {
   datacenters = [var.datacenter]
   type        = "service"
 
+  # Pin Vault to the node that has meta.vault_server = "true".
+  # This ensures the deploy script can always reach it at 127.0.0.1:8200.
+  constraint {
+    attribute = "${meta.vault_server}"
+    value     = "true"
+  }
+
   group "vault" {
     count = 1
 
