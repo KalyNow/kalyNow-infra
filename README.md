@@ -151,25 +151,19 @@ Ajouter dans `/etc/hosts` :
 
 ### Premier démarrage — Bootstrap Vault
 
+La **seule action manuelle requise** est de remplir le fichier de configuration :
+
 ```bash
 cp scripts/config.example.py scripts/config.py
 # Remplir les credentials dans scripts/config.py
-
-# Étape 1 — Initialiser Vault (génère root token + clés unseal)
-python3 scripts/bootstrap_vault.py --init --config scripts/config.py
-# → Sauvegarde les clés dans scripts/.vault-init.json  ← à sauvegarder en lieu sûr !
-
-# Étape 2 — Écrire tous les secrets et configurer l'auth JWT
-python3 scripts/bootstrap_vault.py --config scripts/config.py
 ```
 
-Après chaque redémarrage de Vault (reboot, restart container) :
+> Le reste (init Vault, écriture des secrets, unseal) est **géré automatiquement** par `make deploy` :
+> - Vault non initialisé → init + bootstrap des secrets lancés automatiquement
+> - Vault sealed (après reboot) → unseal automatique
+> - Vault déjà prêt → rien à faire, le déploiement continue
 
-```bash
-python3 scripts/bootstrap_vault.py --unseal-only --config scripts/config.py
-# ou via make :
-make vault-unseal
-```
+Les clés unseal et le root token sont sauvegardés dans `scripts/.vault-init.json` → **à conserver en lieu sûr**.
 
 ### Déploiement local
 
