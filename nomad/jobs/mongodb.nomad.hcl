@@ -1,9 +1,39 @@
+variable "datacenter" {
+  type    = string
+  default = "dc1"
+}
+
+variable "mongodb_count" {
+  type    = number
+  default = 1
+}
+
+variable "mongodb_image" {
+  type    = string
+  default = "mongo:7.0"
+}
+
+variable "mongodb_cpu" {
+  type    = number
+  default = 300
+}
+
+variable "mongodb_memory" {
+  type    = number
+  default = 1024
+}
+
+variable "vault_role" {
+  type    = string
+  default = "nomad-workloads"
+}
+
 job "mongodb" {
-  datacenters = ["dc1"]
+  datacenters = [var.datacenter]
   type        = "service"
 
   group "mongodb" {
-    count = 1
+    count = var.mongodb_count
 
     network {
       mode = "host"
@@ -19,7 +49,7 @@ job "mongodb" {
       driver = "docker"
 
       config {
-        image        = "mongo:7.0"
+        image        = var.mongodb_image
         network_mode = "host"
       }
 
@@ -36,7 +66,7 @@ job "mongodb" {
       }
 
       vault {
-        role        = "nomad-workloads"
+        role        = var.vault_role
         change_mode = "restart"
       }
 
@@ -52,8 +82,8 @@ EOF
       }
 
       resources {
-        cpu    = 300
-        memory = 1024
+        cpu    = var.mongodb_cpu
+        memory = var.mongodb_memory
       }
 
       service {

@@ -1,17 +1,57 @@
 # KalyNow Offer Service — NestJS
 #
-# Runs directly on the host via raw_exec (no container overhead in dev).
 # Consul registers it, Traefik routes /api/of → this service.
 #
-# Deploy:  nomad job run nomad/jobs/offer-service.nomad.hcl
+# Deploy (local): nomad job run -var-file=environments/local/nomad.vars jobs/offer-service.nomad.hcl
+# Deploy (prod):  nomad job run -var-file=environments/prod/nomad.vars  jobs/offer-service.nomad.hcl
 # Logs:    nomad alloc logs <alloc-id>
 
+variable "datacenter" {
+  type    = string
+  default = "dc1"
+}
+
+variable "offer_service_count" {
+  type    = number
+  default = 1
+}
+
+variable "offer_service_image" {
+  type    = string
+  default = "kalynow/offer-service:local"
+}
+
+variable "offer_service_cpu" {
+  type    = number
+  default = 300
+}
+
+variable "offer_service_memory" {
+  type    = number
+  default = 256
+}
+
+variable "domain" {
+  type    = string
+  default = "kalynow.mg"
+}
+
+variable "vault_role" {
+  type    = string
+  default = "nomad-workloads"
+}
+
+variable "force_pull" {
+  type    = bool
+  default = false
+}
+
 job "offer-service" {
-  datacenters = ["dc1"]
+  datacenters = [var.datacenter]
   type        = "service"
 
   group "offer-service" {
-    count = 1
+    count = var.offer_service_count
 
     network {
       port "http" {}
@@ -29,15 +69,15 @@ job "offer-service" {
       }
 
       vault {
-        role        = "nomad-workloads"
+        role        = var.vault_role
         change_mode = "restart"
       }
 
       config {
-        image        = "kalynow/offer-service:local"
+        image        = var.offer_service_image
         ports        = ["http"]
         network_mode = "host"
-        force_pull   = false
+        force_pull   = var.force_pull
       }
 
       template {

@@ -29,8 +29,33 @@
 # Deploy:  nomad job run nomad/jobs/vault.nomad.hcl
 # UI:      http://127.0.0.1:8200/ui
 
+variable "datacenter" {
+  type    = string
+  default = "dc1"
+}
+
+variable "vault_image" {
+  type    = string
+  default = "hashicorp/vault:1.17"
+}
+
+variable "vault_cpu" {
+  type    = number
+  default = 200
+}
+
+variable "vault_memory" {
+  type    = number
+  default = 256
+}
+
+variable "domain" {
+  type    = string
+  default = "kalynow.mg"
+}
+
 job "vault" {
-  datacenters = ["dc1"]
+  datacenters = [var.datacenter]
   type        = "service"
 
   group "vault" {
@@ -51,7 +76,7 @@ job "vault" {
       driver = "docker"
 
       config {
-        image        = "hashicorp/vault:1.17"
+        image        = var.vault_image
         ports        = ["http", "cluster"]
         network_mode = "host"
 
@@ -95,8 +120,8 @@ EOF
       }
 
       resources {
-        cpu    = 200
-        memory = 256
+        cpu    = var.vault_cpu
+        memory = var.vault_memory
       }
 
       service {
@@ -105,7 +130,7 @@ EOF
 
         tags = [
           "traefik.enable=true",
-          "traefik.http.routers.vault.rule=Host(`vault.kalynow.mg`)",
+          "traefik.http.routers.vault.rule=Host(`vault.${var.domain}`)",
           "traefik.http.routers.vault.entrypoints=web",
           "traefik.http.services.vault.loadbalancer.server.port=8200",
         ]

@@ -1,9 +1,44 @@
+variable "datacenter" {
+  type    = string
+  default = "dc1"
+}
+
+variable "rustfs_count" {
+  type    = number
+  default = 1
+}
+
+variable "rustfs_image" {
+  type    = string
+  default = "rustfs/rustfs:1.0.0-alpha.85"
+}
+
+variable "rustfs_cpu" {
+  type    = number
+  default = 300
+}
+
+variable "rustfs_memory" {
+  type    = number
+  default = 256
+}
+
+variable "domain" {
+  type    = string
+  default = "kalynow.mg"
+}
+
+variable "vault_role" {
+  type    = string
+  default = "nomad-workloads"
+}
+
 job "rustfs" {
-  datacenters = ["dc1"]
+  datacenters = [var.datacenter]
   type        = "service"
 
   group "rustfs" {
-    count = 1
+    count = var.rustfs_count
 
     network {
       port "api"     { static = 9000 }
@@ -19,7 +54,7 @@ job "rustfs" {
       driver = "docker"
 
       config {
-        image   = "rustfs/rustfs:1.0.0-alpha.85"
+        image   = var.rustfs_image
         ports   = ["api", "console"]
         args    = ["--console-enable", "/data"]
       }
@@ -37,7 +72,7 @@ job "rustfs" {
       }
 
       vault {
-        role        = "nomad-workloads"
+        role        = var.vault_role
         change_mode = "restart"
       }
 
@@ -54,8 +89,8 @@ EOF
       }
 
       resources {
-        cpu    = 300
-        memory = 256
+        cpu    = var.rustfs_cpu
+        memory = var.rustfs_memory
       }
 
       service {
@@ -64,7 +99,7 @@ EOF
 
         tags = [
           "traefik.enable=true",
-          "traefik.http.routers.rustfs.rule=Host(`kalynow.mg`) && PathPrefix(`/api/as`)",
+          "traefik.http.routers.rustfs.rule=Host(`${var.domain}`) && PathPrefix(`/api/as`)",
           "traefik.http.routers.rustfs.entrypoints=web",
           "traefik.http.routers.rustfs.middlewares=strip-assets-prefix",
           "traefik.http.middlewares.strip-assets-prefix.stripprefix.prefixes=/api/as",

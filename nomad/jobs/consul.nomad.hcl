@@ -6,8 +6,28 @@
 #
 # UI:  http://localhost:8500
 
+variable "datacenter" {
+  type    = string
+  default = "dc1"
+}
+
+variable "consul_image" {
+  type    = string
+  default = "hashicorp/consul:1.20"
+}
+
+variable "consul_cpu" {
+  type    = number
+  default = 200
+}
+
+variable "consul_memory" {
+  type    = number
+  default = 128
+}
+
 job "consul" {
-  datacenters = ["dc1"]
+  datacenters = [var.datacenter]
   type        = "service"
 
   # Run before everything else
@@ -36,7 +56,7 @@ job "consul" {
       }
 
       config {
-        image        = "hashicorp/consul:1.20"
+        image        = var.consul_image
         network_mode = "host"
         command      = "/bin/sh"
         args         = ["local/start.sh"]
@@ -44,8 +64,8 @@ job "consul" {
       }
 
       resources {
-        cpu    = 200
-        memory = 128
+        cpu    = var.consul_cpu
+        memory = var.consul_memory
       }
 
       # No service{} block here — Consul registers itself

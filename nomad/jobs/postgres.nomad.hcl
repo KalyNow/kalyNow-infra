@@ -1,9 +1,39 @@
+variable "datacenter" {
+  type    = string
+  default = "dc1"
+}
+
+variable "postgres_count" {
+  type    = number
+  default = 1
+}
+
+variable "postgres_image" {
+  type    = string
+  default = "postgres:17-alpine"
+}
+
+variable "postgres_cpu" {
+  type    = number
+  default = 300
+}
+
+variable "postgres_memory" {
+  type    = number
+  default = 256
+}
+
+variable "vault_role" {
+  type    = string
+  default = "nomad-workloads"
+}
+
 job "postgres" {
-  datacenters = ["dc1"]
+  datacenters = [var.datacenter]
   type        = "service"
 
   group "postgres" {
-    count = 1
+    count = var.postgres_count
 
     network {
       mode = "host"
@@ -26,12 +56,12 @@ job "postgres" {
       }
 
       vault {
-        role        = "nomad-workloads"
+        role        = var.vault_role
         change_mode = "restart"
       }
 
       config {
-        image        = "postgres:17-alpine"
+        image        = var.postgres_image
         network_mode = "host"
       }
 
@@ -54,8 +84,8 @@ EOF
       }
 
       resources {
-        cpu    = 300
-        memory = 256
+        cpu    = var.postgres_cpu
+        memory = var.postgres_memory
       }
 
       service {
