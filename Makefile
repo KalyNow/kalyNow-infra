@@ -36,7 +36,8 @@ deploy:
 
 ## job: Deploy a single job  (ENV=local|prod  JOB=<name>)
 job:
-	@bash scripts/deploy.sh $(ENV) $(JOB)
+	@bash scriptge-lock.json  README.md  TEMPLATE_CONTENT.md  tsconfig.node.json
+gaetan@fedora:~/DATA/Dev/kalyNow/kalyNow-web$ docker build -t web:locals/deploy.sh $(ENV) $(JOB)
 
 ## stop: Stop a single job  (JOB=<name>)
 stop:

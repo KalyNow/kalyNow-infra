@@ -20,7 +20,7 @@ variable "postgres_cpu" {
 
 variable "postgres_memory" {
   type    = number
-  default = 256
+  default = 256local
 }
 
 variable "vault_role" {
