@@ -14,5 +14,9 @@
 scripts/config.py
 scripts/.vault-init.json
 
+# Generated var-files (produced by scripts/generate_vars.py from config.py)
+environments/*/jobs/*.vars
+environments/*/nomad.vars
+
 *.pyc
 __pycache__/

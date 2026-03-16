@@ -28,6 +28,11 @@ variable "vault_role" {
   default = "nomad-workloads"
 }
 
+variable "postgres_port" {
+  type    = number
+  default = 5432
+}
+
 job "postgres" {
   datacenters = [var.datacenter]
   type        = "service"
@@ -37,7 +42,7 @@ job "postgres" {
 
     network {
       mode = "host"
-      port "postgres" { static = 5432 }
+      port "postgres" { static = var.postgres_port }
     }
 
     volume "postgres_data" {

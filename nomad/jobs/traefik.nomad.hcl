@@ -46,6 +46,16 @@ variable "traefik_dashboard_subdomain" {
   default = "traefik"
 }
 
+variable "traefik_http_port" {
+  type    = number
+  default = 80
+}
+
+variable "traefik_dashboard_port" {
+  type    = number
+  default = 8080
+}
+
 job "traefik" {
   datacenters = [var.datacenter]
   type        = "service"
@@ -54,8 +64,8 @@ job "traefik" {
     count = 1
 
     network {
-      port "http"      { static = 80 }
-      port "dashboard" { static = 8080 }
+      port "http"      { static = var.traefik_http_port }
+      port "dashboard" { static = var.traefik_dashboard_port }
     }
 
     task "traefik" {
@@ -84,13 +94,10 @@ ping: {}
 entryPoints:
   # Default entrypoint — all HTTP traffic, default route goes to the web SPA
   web:
-    address: ":80"
-  # TLS entrypoint — ready for HTTPS when certs are added
-  websecure:
-    address: ":443"
+    address: ":${var.traefik_http_port}"
   # Dashboard entrypoint — Traefik UI only
   traefik:
-    address: ":8080"
+    address: ":${var.traefik_dashboard_port}"
 
 # Consul catalog provider — routes discovered from service tags
 # No Docker socket, no static files needed

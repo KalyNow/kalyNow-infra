@@ -103,7 +103,16 @@ else
 fi
 echo "    Var-files : ${ENV_DIR}/<job>.vars"
 echo ""
-
+# ── Generate var-files from config.py ──────────────────────────────────────────
+CONFIG_FILE="scripts/config.py"
+if [[ -f "$CONFIG_FILE" ]]; then
+    echo "🔧  Generating var-files from ${CONFIG_FILE}..."
+    python3 scripts/generate_vars.py --env "${ENV}" --config "${CONFIG_FILE}"
+    echo ""
+else
+    echo "⚠️   ${CONFIG_FILE} not found — using existing var-files as-is"
+    echo ""
+fi
 # Infrastructure first
 run_job consul
 sleep 3   # Give Consul a moment to be ready

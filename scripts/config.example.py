@@ -58,3 +58,69 @@ OFFER_SERVICE_RUSTFS_REGION  = "us-east-1"
 USER_SERVICE_DATABASE_URL    = ""   # postgresql://user:pass@host:port/db
 OFFER_SERVICE_MONGODB_URI    = ""   # mongodb://user:pass@host:port/db?authSource=admin
 OFFER_SERVICE_RUSTFS_ENDPOINT = ""  # http://host:port
+# ──────────────────────────────────────────────────────────────────────────────
+# NOMAD INFRASTRUCTURE
+# Used by generate_vars.py to write environments/<env>/jobs/*.vars
+# Defaults are for local dev. Override here for prod/preprod.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Global ───────────────────────────────────────────────────────────────────────
+NOMAD_DATACENTER = "dc1"
+DOMAIN           = "kalynow.mg"
+VAULT_ROLE       = "nomad-workloads"
+FORCE_PULL       = False   # True in prod (always pull latest image)
+
+# ── Traefik ───────────────────────────────────────────────────────────────────
+TRAEFIK_IMAGE               = "traefik:v3.3"
+TRAEFIK_CPU                 = 200
+TRAEFIK_MEMORY              = 128
+TRAEFIK_DASHBOARD_ENABLED   = True
+TRAEFIK_DASHBOARD_SUBDOMAIN = "traefik"
+TRAEFIK_HTTP_PORT           = 80      # Set to 8888 if behind nginx on prod
+TRAEFIK_DASHBOARD_PORT      = 8080
+
+# ── PostgreSQL ───────────────────────────────────────────────────────────────────
+# POSTGRES_HOST / POSTGRES_PORT also drive the DATABASE_URL stored in Vault
+POSTGRES_IMAGE  = "postgres:17-alpine"
+POSTGRES_COUNT  = 1
+POSTGRES_CPU    = 300
+POSTGRES_MEMORY = 256
+# POSTGRES_HOST and POSTGRES_PORT are already declared above (connection section)
+# They are reused here: POSTGRES_PORT drives both the container port AND the DATABASE_URL
+
+# ── MongoDB ─────────────────────────────────────────────────────────────────────
+MONGODB_IMAGE  = "mongo:7.0"
+MONGODB_COUNT  = 1
+MONGODB_CPU    = 300
+MONGODB_MEMORY = 512
+
+# ── RustFS ──────────────────────────────────────────────────────────────────────
+RUSTFS_IMAGE  = "rustfs/rustfs:1.0.0-alpha.85"
+RUSTFS_COUNT  = 1
+RUSTFS_CPU    = 300
+RUSTFS_MEMORY = 256
+
+# ── Application services ─────────────────────────────────────────────────────────
+USER_SERVICE_IMAGE  = "kalynow/user-service:local"
+USER_SERVICE_COUNT  = 1
+USER_SERVICE_CPU    = 300
+USER_SERVICE_MEMORY = 256
+
+OFFER_SERVICE_IMAGE  = "kalynow/offer-service:local"
+OFFER_SERVICE_COUNT  = 1
+OFFER_SERVICE_CPU    = 300
+OFFER_SERVICE_MEMORY = 256
+
+WEB_IMAGE  = "kalynow/web:local"
+WEB_COUNT  = 1
+WEB_CPU    = 100
+WEB_MEMORY = 64
+
+# ── Consul / Vault (infra images) ───────────────────────────────────────────────
+CONSUL_IMAGE  = "hashicorp/consul:1.20"
+CONSUL_CPU    = 200
+CONSUL_MEMORY = 128
+
+VAULT_IMAGE  = "hashicorp/vault:1.17"
+VAULT_CPU    = 200
+VAULT_MEMORY = 256

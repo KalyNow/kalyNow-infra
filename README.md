@@ -12,9 +12,10 @@ kalyNow-infra/
 ├── Makefile                        # Commandes raccourcies (make deploy, make restart…)
 ├── scripts/
 │   ├── deploy.sh                   # Script de déploiement ordonné (local | prod)
+│   ├── generate_vars.py            # Génère les .vars Nomad depuis config.py
 │   ├── bootstrap_vault.py          # Init / unseal / bootstrap Vault
-│   ├── config.example.py           # Template de configuration Vault
-│   ├── config.py                   # Config locale (⚠️ ne pas committer)
+│   ├── config.example.py           # Template de configuration (source de vérité)
+│   ├── config.py                   # Config locale remplie (⚠️ ne pas committer)
 │   └── setup_nomad_volumes.sh      # Création des volumes hôtes
 ├── nomad/
 │   ├── config/
@@ -60,18 +61,19 @@ kalyNow-infra/
 ```
 
 > **Principe** : les fichiers `nomad/jobs/*.nomad.hcl` sont partagés entre les deux environnements.
-> Les différences (image tag, CPU, mémoire, domaine…) sont portées par les fichiers `.vars` dans `environments/<env>/jobs/`.
+> Les fichiers `environments/<env>/jobs/*.vars` sont **générés automatiquement** par `generate_vars.py`
+> depuis `scripts/config.py` — ne pas les éditer manuellement.
 
 ---
 
 ## Services gérés dans ce repo
 
-| Service | Description | Port local | Port prod |
-|---------|-------------|-----------|-----------|
+| Service | Description | Port local | Port preprod/prod |
+|---------|-------------|-----------|-------------------|
 | Consul | Service discovery | 8500 | 8500 |
 | Vault | Secrets manager | 8200 | 8200 |
-| Traefik | Reverse proxy / ingress | 80, 8080 | 80, 443, 8080 |
-| PostgreSQL | DB relationnelle | 5432 | 5432 |
+| Traefik | Reverse proxy / ingress | :80, :8080 | :8888, :8080 |
+| PostgreSQL | DB relationnelle | 5432 | 5433 (évite conflit) |
 | MongoDB | DB documentaire | 27017 | 27017 |
 | RustFS | Stockage S3-compatible | 9000, 9001 | 9000, 9001 |
 | user-service | API utilisateurs | dynamic | dynamic |
@@ -149,21 +151,27 @@ Ajouter dans `/etc/hosts` :
 127.0.0.1  kalynow.mg  traefik.kalynow.mg  vault.kalynow.mg
 ```
 
-### Premier démarrage — Bootstrap Vault
+### Premier démarrage — Configuration
 
-La **seule action manuelle requise** est de remplir le fichier de configuration :
+`config.py` est la **source de vérité unique** pour toute l'infrastructure :
 
 ```bash
 cp scripts/config.example.py scripts/config.py
-# Remplir les credentials dans scripts/config.py
+# Remplir scripts/config.py
 ```
 
-> Le reste (init Vault, écriture des secrets, unseal) est **géré automatiquement** par `make deploy` :
-> - Vault non initialisé → init + bootstrap des secrets lancés automatiquement
-> - Vault sealed (après reboot) → unseal automatique
-> - Vault déjà prêt → rien à faire, le déploiement continue
+Ce fichier contrôle **deux choses à la fois** :
 
-Les clés unseal et le root token sont sauvegardés dans `scripts/.vault-init.json` → **à conserver en lieu sûr**.
+| Ce que `config.py` pilote | Via quel script |
+|---|---|
+| Secrets applicatifs (DB URL, JWT, credentials…) | `bootstrap_vault.py` → écrit dans Vault |
+| Variables Nomad (ports, images, ressources…) | `generate_vars.py` → écrit les `.vars` |
+
+Exemple : changer `POSTGRES_PORT = "5433"` dans `config.py` met à jour **en même temps** :
+- Le port hôte du container Postgres Nomad
+- La `DATABASE_URL` injectée dans user-service via Vault
+
+> Tout le reste (init Vault, génération des vars, unseal, déploiement) est **géré automatiquement** par `make deploy`.
 
 ### Déploiement local
 
@@ -225,55 +233,77 @@ Valeurs typiques : image tag `:local`, `force_pull = false`, ressources minimale
 
 ---
 
-## 3) Environnement production (prod)
+## 3) Environnement production / preprod
 
 ### Prérequis serveur
 
 - Nomad agent configuré et démarré
 - Docker Engine installé
 - DNS pointant `kalynow.mg` et sous-domaines vers le serveur
-- `NOMAD_ADDR` et `NOMAD_TOKEN` exportés (ou configurés dans `~/.nomad`)
+- `NOMAD_ADDR` exporté (ou configuré dans `~/.nomad`)
 
-### Variables de production
+### Configuration prod dans `config.py`
 
-Les overrides sont dans `environments/prod/jobs/<job>.vars`.
-Valeurs typiques : image tag `:latest`, `force_pull = true`, ressources doublées, `count = 2` pour les services stateless.
+Tout se configure dans `scripts/config.py`. Les valeurs à adapter pour un serveur prod/preprod :
 
-Exemple — modifier l'image web en prod :
+```python
+# ── Domaine ──────────────────────────────────────────────────────────────────
+DOMAIN     = "kalynow.mg"
+FORCE_PULL = True
 
-```hcl
-# environments/prod/jobs/web.vars
-web_image   = "registry.example.com/kalynow/web:v1.2.3"
-web_count   = 2
-web_cpu     = 200
-web_memory  = 128
+# ── Traefik ───────────────────────────────────────────────────────────────────
+TRAEFIK_HTTP_PORT         = 8888   # derrière nginx sur le serveur
+TRAEFIK_DASHBOARD_ENABLED = False
+
+# ── PostgreSQL ───────────────────────────────────────────────────────────────────
+POSTGRES_PORT = "5433"   # évite le conflit avec le Postgres existant sur 5432
+                          # → aussi utilisé dans DATABASE_URL envoyée à user-service
+
+# ── Images (taguées par le pipeline CI/CD) ───────────────────────────────────
+USER_SERVICE_IMAGE  = "kalynow/user-service:latest"
+OFFER_SERVICE_IMAGE = "kalynow/offer-service:latest"
+WEB_IMAGE           = "kalynow/web:latest"
+
+# ── Ressources ─────────────────────────────────────────────────────────────────
+USER_SERVICE_COUNT  = 2
+OFFER_SERVICE_COUNT = 2
+WEB_COUNT           = 2
 ```
 
-### Déploiement production
+Une fois `config.py` rempli, `make deploy` fait tout le reste.
+
+### Déploiement
 
 ```bash
 export NOMAD_ADDR=http://<server-ip>:4646
-export NOMAD_TOKEN=<token>
 
 make deploy ENV=prod
+# 1. génère environments/prod/jobs/*.vars depuis config.py
+# 2. bootstrap Vault (init/unseal si nécessaire)
+# 3. déploie tous les jobs dans l'ordre
 ```
 
-**Redémarrer un seul job en prod :**
+**Redémarrer un seul job :**
 
 ```bash
 make job JOB=offer-service ENV=prod
 ```
 
-**Redémarrer tous les jobs en prod :**
+**Redémarrer tous les jobs (sauf consul) :**
 
 ```bash
 make restart ENV=prod
 ```
 
-### Traefik TLS (prod)
+### Architecture réseau preprod
 
-Traefik expose l'entrypoint `websecure` sur le port 443.
-Configurer Let's Encrypt dans `nomad/jobs/traefik.nomad.hcl` pour les certificats automatiques.
+Sur le serveur preprod, nginx tourne déjà sur :80/:443 — Traefik tourne sur :8888 :
+
+```
+nginx :80/:443  →  Traefik :8888  →  services (ports dynamiques Nomad)
+```
+
+Traefik lit les routes depuis Consul et route automatiquement les requêtes.
 
 ---
 
@@ -322,8 +352,10 @@ curl -s http://127.0.0.1:8080/api/http/routers | jq -r '.[].name'
 
 ## Notes importantes
 
+- **`scripts/config.py`** est la **source de vérité unique** — ports, images, credentials, ressources. Ne jamais éditer les `.vars` manuellement.
 - **`scripts/.vault-init.json`** contient les clés unseal et le root token → **ne jamais committer ce fichier** (il est dans `.gitignore`).
 - **`scripts/config.py`** contient des credentials → **ne jamais committer ce fichier**.
+- Les fichiers `environments/*/jobs/*.vars` sont **générés** par `generate_vars.py` — ils peuvent être regénérés à tout moment.
 - Vault tourne en mode **file storage** — les secrets survivent aux redémarrages du container mais pas à la suppression du volume.
 - Traefik lit les routes depuis Consul (`consulCatalog`) via les tags des jobs Nomad — Consul doit toujours être up.
-- Les fichiers `.nomad.hcl` sont **identiques entre local et prod** ; seuls les `.vars` diffèrent.
+- Les fichiers `.nomad.hcl` sont **identiques entre local et prod** ; seuls les `.vars` diffèrent (et sont générés).
