@@ -56,6 +56,13 @@ variable "traefik_dashboard_port" {
   default = 8080
 }
 
+# Set to true when Traefik is behind a reverse proxy (nginx) that handles TLS.
+# Enables forwardedHeaders trusting 127.0.0.1 so X-Forwarded-Proto is respected.
+variable "traefik_behind_proxy" {
+  type    = bool
+  default = false
+}
+
 job "traefik" {
   datacenters = [var.datacenter]
   type        = "service"
@@ -77,7 +84,14 @@ job "traefik" {
         args         = ["--configFile=/local/traefik.yml"]
       }
 
+      env {
+        TRAEFIK_HTTP_PORT    = "${var.traefik_http_port}"
+        TRAEFIK_DASH_PORT    = "${var.traefik_dashboard_port}"
+        TRAEFIK_BEHIND_PROXY = "${var.traefik_behind_proxy}"
+      }
+
       # Traefik static config — injected at runtime via Nomad template
+      # Variables are passed via env{} and read with {{ env "VAR" }} (Go template syntax)
       template {
         destination = "local/traefik.yml"
         data        = <<EOF
@@ -92,15 +106,16 @@ api:
 ping: {}
 
 entryPoints:
-  # Default entrypoint — all HTTP traffic, default route goes to the web SPA
   web:
-    address: ":${var.traefik_http_port}"
-  # Dashboard entrypoint — Traefik UI only
+    address: ":{{ env "TRAEFIK_HTTP_PORT" }}"
+    {{- if eq (env "TRAEFIK_BEHIND_PROXY") "true" }}
+    forwardedHeaders:
+      trustedIPs:
+        - "127.0.0.1"
+    {{- end }}
   traefik:
-    address: ":${var.traefik_dashboard_port}"
+    address: ":{{ env "TRAEFIK_DASH_PORT" }}"
 
-# Consul catalog provider — routes discovered from service tags
-# No Docker socket, no static files needed
 providers:
   consulCatalog:
     endpoint:

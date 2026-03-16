@@ -17,9 +17,15 @@ set -euo pipefail
 ENV="${1:-local}"
 JOB="${2:-}"
 RESTART=false
+PURGE=false
 
 if [[ "$JOB" == "--restart" ]]; then
     RESTART=true
+    JOB=""
+fi
+
+if [[ "$JOB" == "--purge" ]]; then
+    PURGE=true
     JOB=""
 fi
 
@@ -59,6 +65,23 @@ stop_job() {
         echo "   ${job} not running — skipping stop"
     fi
 }
+
+# ── Purge mode: stop AND purge ALL jobs including consul ─────────────────────
+if [[ "$PURGE" == true ]]; then
+    echo "🗑️   Purge mode — stopping and purging ALL jobs"
+    echo ""
+    for job in web offer-service user-service rustfs mongodb postgres traefik vault consul; do
+        if nomad job status "$job" &>/dev/null; then
+            echo "🛑  Purging ${job}..."
+            nomad job stop -purge "$job" || true
+        else
+            echo "   ${job} not running — skipping"
+        fi
+    done
+    echo ""
+    echo "✅  All jobs purged."
+    exit 0
+fi
 
 # ── Restart mode: stop all (except consul) then redeploy ──────────────────────
 if [[ "$RESTART" == true ]]; then
@@ -144,9 +167,41 @@ for i in $(seq 1 20); do
         break
     elif [[ "$STATUS_CODE" == "503" ]]; then
         echo ""
-        echo "🔒  Vault is SEALED. Unsealing..."
-        python3 scripts/bootstrap_vault.py --unseal-only --config scripts/config.py
-        echo "✅  Vault unsealed."
+        if [[ -f "scripts/.vault-init.json" ]]; then
+            echo "🔒  Vault is SEALED. Unsealing..."
+            python3 scripts/bootstrap_vault.py --unseal-only --config scripts/config.py
+            echo "✅  Vault unsealed."
+        else
+            echo "🔒  Vault is SEALED but no unseal keys found — wiping and re-initializing..."
+            echo "    Stopping Vault job..."
+            nomad job stop -purge vault || true
+            echo "    Waiting for Vault container to stop..."
+            for i in $(seq 1 15); do
+                if ! curl -s --max-time 1 "${VAULT_ADDR}/v1/sys/health" &>/dev/null; then
+                    echo "    Vault container stopped."
+                    break
+                fi
+                sleep 2
+            done
+            echo "    Wiping Vault data volume (/opt/nomad/volumes/vault)..."
+            sudo rm -rf /opt/nomad/volumes/vault/*
+            echo "    Restarting Vault job..."
+            run_job vault
+            echo "    Waiting for fresh Vault to come up (uninitialized)..."
+            for i in $(seq 1 20); do
+                SC=$(curl -s -o /dev/null -w "%{http_code}" "${VAULT_ADDR}/v1/sys/health" || true)
+                if [[ "$SC" == "501" ]]; then
+                    echo "    Vault is fresh and uninitialized."
+                    break
+                fi
+                echo "    Attempt ${i}/20 — waiting (HTTP ${SC:-000})..."
+                sleep 3
+            done
+            echo "🔑  Running first-time init + bootstrap..."
+            python3 scripts/bootstrap_vault.py --init --config scripts/config.py
+            python3 scripts/bootstrap_vault.py --config scripts/config.py
+            echo "✅  Vault re-initialized and bootstrapped."
+        fi
         break
     else
         echo "   Attempt ${i}/20 — Vault not reachable yet (HTTP ${STATUS_CODE:-000}), retrying in 3s..."

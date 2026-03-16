@@ -26,6 +26,10 @@ help:
 restart:
 	@bash scripts/deploy.sh $(ENV) --restart
 
+## purge: Stop AND purge ALL jobs including consul (clean slate)
+purge:
+	@bash scripts/deploy.sh $(ENV) --purge
+
 ## deploy: Deploy all jobs  (ENV=local|prod)
 deploy:
 	@bash scripts/deploy.sh $(ENV)

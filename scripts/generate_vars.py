@@ -114,6 +114,8 @@ def vars_traefik(cfg: dict, env: str) -> dict:
         "traefik_dashboard_subdomain": get(cfg, "TRAEFIK_DASHBOARD_SUBDOMAIN", "traefik"),
         "traefik_http_port":           get(cfg, "TRAEFIK_HTTP_PORT", 80),
         "traefik_dashboard_port":      get(cfg, "TRAEFIK_DASHBOARD_PORT", 8080),
+        # True when Traefik is behind nginx (prod) — enables forwardedHeaders
+        "traefik_behind_proxy":         get(cfg, "TRAEFIK_BEHIND_PROXY", env == "prod"),
     }
 
 

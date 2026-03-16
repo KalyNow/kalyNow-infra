@@ -78,6 +78,7 @@ TRAEFIK_DASHBOARD_ENABLED   = True
 TRAEFIK_DASHBOARD_SUBDOMAIN = "traefik"
 TRAEFIK_HTTP_PORT           = 80      # Set to 8888 if behind nginx on prod
 TRAEFIK_DASHBOARD_PORT      = 8080
+TRAEFIK_BEHIND_PROXY        = False   # Set to True when Traefik is behind nginx (prod)
 
 # ── PostgreSQL ───────────────────────────────────────────────────────────────────
 # POSTGRES_HOST / POSTGRES_PORT also drive the DATABASE_URL stored in Vault
