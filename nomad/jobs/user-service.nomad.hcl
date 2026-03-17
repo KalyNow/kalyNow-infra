@@ -121,6 +121,13 @@ EOF
           "traefik.http.middlewares.users-docs-shortcut.replacepathregex.regex=^/api/us/?$$",
           "traefik.http.middlewares.users-docs-shortcut.replacepathregex.replacement=/api",
           "traefik.http.middlewares.strip-users-prefix.stripprefix.prefixes=/api/us",
+
+          # Internal router — no Host rule, matched by forwardauth via 127.0.0.1
+          # Path /auth/verify is forwarded as-is to user-service (no strip)
+          "traefik.http.routers.users-internal.rule=PathPrefix(`/auth/verify`)",
+          "traefik.http.routers.users-internal.entrypoints=web",
+          "traefik.http.routers.users-internal.priority=100",
+          "traefik.http.routers.users-internal.service=user-service",
         ]
 
         check {

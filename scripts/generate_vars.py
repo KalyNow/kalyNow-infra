@@ -181,6 +181,7 @@ def vars_offer_service(cfg: dict, env: str) -> dict:
         "domain":               get(cfg, "DOMAIN", "kalynow.mg"),
         "vault_role":           get(cfg, "VAULT_ROLE", "nomad-workloads"),
         "force_pull":           get(cfg, "FORCE_PULL", is_prod),
+        "traefik_http_port":    get(cfg, "TRAEFIK_HTTP_PORT", 80),
     }
 
 

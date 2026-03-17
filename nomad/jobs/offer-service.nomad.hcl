@@ -46,6 +46,11 @@ variable "force_pull" {
   default = false
 }
 
+variable "traefik_http_port" {
+  type    = number
+  default = 80
+}
+
 job "offer-service" {
   datacenters = [var.datacenter]
   type        = "service"
@@ -116,7 +121,7 @@ EOF
           "traefik.http.middlewares.offers-trailing-slash.redirectregex.permanent=true",
           "traefik.http.middlewares.offers-docs-shortcut.replacepathregex.regex=^/api/of/?$",
           "traefik.http.middlewares.offers-docs-shortcut.replacepathregex.replacement=/api",
-          "traefik.http.middlewares.offers-auth.forwardauth.address=http://kalynow.mg/api/us/auth/verify",
+          "traefik.http.middlewares.offers-auth.forwardauth.address=http://127.0.0.1:${var.traefik_http_port}/auth/verify",
           "traefik.http.middlewares.offers-auth.forwardauth.trustForwardHeader=true",
           "traefik.http.middlewares.offers-auth.forwardauth.authRequestHeaders=Authorization",
           "traefik.http.middlewares.offers-auth.forwardauth.authResponseHeaders=X-User-Id,X-User-Email,X-User-Role",
