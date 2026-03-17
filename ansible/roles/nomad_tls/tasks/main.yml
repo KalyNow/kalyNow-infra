@@ -1,0 +1,134 @@
+---
+# ─── Role: nomad_tls ─────────────────────────────────────────────────────
+#
+# All IPs/DNS come from cluster.yml — nothing is hardcoded here.
+#
+# Server cert SANs are automatically built as:
+#   IPs  : nomad_server_ip + all nomad_clients_ips values + 127.0.0.1 + tls_extra_ips
+#   DNS  : server.{{ nomad_region }}.nomad + tls_extra_dns
+#
+# Cert files produced in {{ tls_local_dir }} on the controller:
+#   nomad-agent-ca.pem / nomad-agent-ca-key.pem
+#   global-server-nomad.pem / global-server-nomad-key.pem
+#   global-client-nomad.pem / global-client-nomad-key.pem
+
+- name: "TLS | Create local TLS output directory on controller"
+  delegate_to: localhost
+  become: false
+  ansible.builtin.file:
+    path: "{{ tls_local_dir }}"
+    state: directory
+    mode: "0700"
+
+# ── Automatically derive all SANs from cluster.yml ───────────────────────────────────
+
+- name: "TLS | Build server cert SANs from cluster.yml"
+  delegate_to: localhost
+  become: false
+  ansible.builtin.set_fact:
+    _tls_all_ips: >-
+      {{ ([nomad_server_ip, '127.0.0.1']
+          + (nomad_clients_ips.values() | list)
+          + (tls_extra_ips | default([])))
+         | unique }}
+    _tls_all_dns: >-
+      {{ (['server.' + nomad_region + '.nomad']
+          + (tls_extra_dns | default([])))
+         | unique }}
+
+- name: "TLS | Format SAN args for nomad tls cert create"
+  delegate_to: localhost
+  become: false
+  ansible.builtin.set_fact:
+    _tls_ip_args:  "{{ _tls_all_ips  | map('regex_replace', '^(.*)$', '-additional-ipaddress=\\1')  | join(' ') }}"
+    _tls_dns_args: "{{ _tls_all_dns  | map('regex_replace', '^(.*)$', '-additional-dnsname=\\1')    | join(' ') }}"
+
+# ── Generate CA ──────────────────────────────────────────────────────────────────────
+
+- name: "TLS | Check if CA already exists"
+  delegate_to: localhost
+  become: false
+  ansible.builtin.stat:
+    path: "{{ tls_local_dir }}/nomad-agent-ca.pem"
+  register: ca_stat
+
+- name: "TLS | Generate CA (nomad tls ca create)"
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    cmd: nomad tls ca create
+    chdir: "{{ tls_local_dir }}"
+  when: not ca_stat.stat.exists
+
+# ── Generate server cert ─────────────────────────────────────────────────────────
+
+- name: "TLS | Check if server cert already exists"
+  delegate_to: localhost
+  become: false
+  ansible.builtin.stat:
+    path: "{{ tls_local_dir }}/global-server-nomad.pem"
+  register: server_cert_stat
+
+- name: "TLS | Generate server certificate (SANs from cluster.yml)"
+  delegate_to: localhost
+  become: false
+  ansible.builtin.shell:
+    cmd: >
+      nomad tls cert create
+      -server
+      -region {{ nomad_region }}
+      {{ _tls_dns_args }}
+      {{ _tls_ip_args }}
+    chdir: "{{ tls_local_dir }}"
+  when: not server_cert_stat.stat.exists
+
+# ── Generate client cert ─────────────────────────────────────────────────────────
+
+- name: "TLS | Check if client cert already exists"
+  delegate_to: localhost
+  become: false
+  ansible.builtin.stat:
+    path: "{{ tls_local_dir }}/global-client-nomad.pem"
+  register: client_cert_stat
+
+- name: "TLS | Generate client certificate"
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    cmd: nomad tls cert create -client -region {{ nomad_region }}
+    chdir: "{{ tls_local_dir }}"
+  when: not client_cert_stat.stat.exists
+
+# ── Distribute to server nodes ──────────────────────────────────────────────────────
+
+- name: "TLS | Distribute server certs to server nodes"
+  ansible.builtin.copy:
+    src: "{{ tls_local_dir }}/{{ item }}"
+    dest: "{{ nomad_config_dir }}/{{ item }}"
+    owner: nomad
+    group: nomad
+    mode: "0640"
+  loop:
+    - nomad-agent-ca.pem
+    - global-server-nomad.pem
+    - global-server-nomad-key.pem
+    - global-client-nomad.pem
+    - global-client-nomad-key.pem
+  when: inventory_hostname in groups['nomad_servers']
+  notify: Restart Nomad
+
+# ── Distribute to client nodes ──────────────────────────────────────────────────────
+
+- name: "TLS | Distribute client certs to client nodes"
+  ansible.builtin.copy:
+    src: "{{ tls_local_dir }}/{{ item }}"
+    dest: "{{ nomad_config_dir }}/{{ item }}"
+    owner: nomad
+    group: nomad
+    mode: "0640"
+  loop:
+    - nomad-agent-ca.pem
+    - global-client-nomad.pem
+    - global-client-nomad-key.pem
+  when: inventory_hostname in groups['nomad_clients']
+  notify: Restart Nomad

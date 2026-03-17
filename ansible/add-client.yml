@@ -1,0 +1,49 @@
+---
+# ─── add-client.yml ──────────────────────────────────────────────────────────
+#
+# Provision a brand-new client node without touching the existing cluster.
+#
+# Usage:
+#   # 1. Add the new host to inventory/hosts.ini under [nomad_clients]
+#   # 2. Run:
+#   ansible-playbook add-client.yml --limit <new-hostname>
+
+- name: "Distribute TLS client certs to new node"
+  hosts: "{{ target | default('nomad_clients') }}"
+  gather_facts: true
+  tags: [tls]
+  roles:
+    - role: nomad_tls
+
+- name: "Install Nomad on new client node"
+  hosts: "{{ target | default('nomad_clients') }}"
+  gather_facts: true
+  tags: [install]
+  roles:
+    - role: nomad_install
+
+- name: "Create host volumes on new client node"
+  hosts: "{{ target | default('nomad_clients') }}"
+  gather_facts: false
+  tags: [volumes]
+  roles:
+    - role: nomad_volumes
+
+- name: "Configure and start Nomad on new client node"
+  hosts: "{{ target | default('nomad_clients') }}"
+  gather_facts: true
+  tags: [configure]
+  roles:
+    - role: nomad_configure
+
+- name: "Enable Nomad service on new client node"
+  hosts: "{{ target | default('nomad_clients') }}"
+  gather_facts: false
+  tags: [service]
+  tasks:
+    - name: "Service | Enable and start nomad"
+      ansible.builtin.systemd:
+        name: nomad
+        enabled: true
+        state: started
+        daemon_reload: true

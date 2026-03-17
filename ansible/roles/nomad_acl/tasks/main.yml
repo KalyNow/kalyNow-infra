@@ -1,0 +1,59 @@
+---
+# ─── Role: nomad_acl ─────────────────────────────────────────────────────────
+#
+# Bootstraps Nomad ACL system on the server node.
+# Runs ONLY once — skipped if the bootstrap token file already exists.
+#
+# The root token is written to {{ nomad_acl_token_file }} on the controller.
+# ⚠️  Keep this file SECRET — treat it like an SSH private key.
+
+- name: "ACL | Check if bootstrap token already exists on controller"
+  delegate_to: localhost
+  become: false
+  ansible.builtin.stat:
+    path: "{{ nomad_acl_token_file }}"
+  register: _acl_token_stat
+
+- name: "ACL | Wait for Nomad to be ready"
+  ansible.builtin.uri:
+    url: "https://{{ nomad_advertise_ip }}:4646/v1/status/leader"
+    validate_certs: false
+    status_code: 200
+  register: _nomad_ready
+  until: _nomad_ready.status == 200
+  retries: 20
+  delay: 5
+  when: not _acl_token_stat.stat.exists
+
+- name: "ACL | Bootstrap ACL and capture root token"
+  ansible.builtin.command: nomad acl bootstrap
+  environment:
+    NOMAD_ADDR: "https://{{ nomad_advertise_ip }}:4646"
+    NOMAD_CACERT: "{{ nomad_config_dir }}/nomad-agent-ca.pem"
+    NOMAD_CLIENT_CERT: "{{ nomad_config_dir }}/global-server-nomad.pem"
+    NOMAD_CLIENT_KEY: "{{ nomad_config_dir }}/global-server-nomad-key.pem"
+  register: _acl_bootstrap_out
+  changed_when: true
+  when: not _acl_token_stat.stat.exists
+
+- name: "ACL | Save bootstrap output to controller"
+  delegate_to: localhost
+  become: false
+  ansible.builtin.copy:
+    content: "{{ _acl_bootstrap_out.stdout }}"
+    dest: "{{ nomad_acl_token_file }}"
+    mode: "0600"
+  when: not _acl_token_stat.stat.exists
+
+- name: "ACL | Print bootstrap token location"
+  ansible.builtin.debug:
+    msg: >-
+      ✅  ACL bootstrap complete.
+      Root token saved to: {{ nomad_acl_token_file }}
+      ⚠️   Never commit this file!
+  when: not _acl_token_stat.stat.exists
+
+- name: "ACL | Bootstrap already done (token file exists)"
+  ansible.builtin.debug:
+    msg: "ACL already bootstrapped — skipping. Token file: {{ nomad_acl_token_file }}"
+  when: _acl_token_stat.stat.exists

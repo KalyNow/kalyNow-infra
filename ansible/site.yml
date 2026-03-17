@@ -1,0 +1,88 @@
+---
+# ─── site.yml — Full cluster provisioning ────────────────────────────────────
+#
+# Runs every role in the correct order.
+# Use this for a fresh cluster or a full re-provision.
+#
+# Usage:
+#   ansible-playbook site.yml
+#   ansible-playbook site.yml --tags tls          # re-issue certs only
+#   ansible-playbook site.yml --tags configure    # push config changes only
+#   ansible-playbook site.yml --limit vps2        # add a new client node
+
+# ── Phase 1: Generate TLS certs (controller → tls/ dir, then push to nodes) ──
+- name: "Generate and distribute TLS certificates"
+  hosts: nomad_all
+  gather_facts: true
+  tags: [tls]
+  roles:
+    - role: nomad_tls
+
+# ── Phase 2: Install Nomad on every node ─────────────────────────────────────
+- name: "Install Nomad on all nodes"
+  hosts: nomad_all
+  gather_facts: true
+  tags: [install]
+  roles:
+    - role: nomad_install
+
+# ── Phase 3: Create host volumes on every node ───────────────────────────────
+- name: "Create host volume directories"
+  hosts: nomad_all
+  gather_facts: false
+  tags: [volumes]
+  roles:
+    - role: nomad_volumes
+
+# ── Phase 4: Deploy Nomad config and (re)start ───────────────────────────────
+- name: "Configure and start Nomad"
+  hosts: nomad_all
+  gather_facts: true
+  tags: [configure]
+  roles:
+    - role: nomad_configure
+
+# ── Phase 5: Enable and start Nomad service on all nodes ─────────────────────
+- name: "Enable Nomad systemd service"
+  hosts: nomad_all
+  gather_facts: false
+  tags: [service]
+  tasks:
+    - name: "Service | Enable and start nomad"
+      ansible.builtin.systemd:
+        name: nomad
+        enabled: true
+        state: started
+        daemon_reload: true
+
+# ── Phase 6: Bootstrap ACL (server only, runs once) ──────────────────────────
+- name: "Bootstrap Nomad ACL"
+  hosts: nomad_servers
+  gather_facts: true
+  tags: [acl]
+  vars:
+    nomad_acl_token_file: "{{ playbook_dir }}/../.nomad-bootstrap-token"
+  roles:
+    - role: nomad_acl
+
+# ── Phase 7: Verify cluster ───────────────────────────────────────────────────
+- name: "Verify cluster health"
+  hosts: nomad_servers
+  gather_facts: false
+  tags: [verify]
+  tasks:
+    - name: "Verify | Wait for all nodes to join"
+      ansible.builtin.command: nomad node status
+      environment:
+        NOMAD_ADDR: "https://{{ nomad_advertise_ip }}:4646"
+        NOMAD_CACERT: "{{ nomad_config_dir }}/nomad-agent-ca.pem"
+        NOMAD_CLIENT_CERT: "{{ nomad_config_dir }}/global-server-nomad.pem"
+        NOMAD_CLIENT_KEY: "{{ nomad_config_dir }}/global-server-nomad-key.pem"
+        NOMAD_TOKEN: "{{ lookup('file', playbook_dir + '/../.nomad-bootstrap-token') | regex_search('Secret ID\\s*=\\s*(\\S+)', '\\1') | first }}"
+      register: _node_status
+      changed_when: false
+      failed_when: false
+
+    - name: "Verify | Show node status"
+      ansible.builtin.debug:
+        msg: "{{ _node_status.stdout_lines }}"

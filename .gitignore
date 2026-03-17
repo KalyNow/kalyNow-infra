@@ -14,6 +14,11 @@
 scripts/config.py
 scripts/.vault-init.json
 
+# Ansible — TLS certs and bootstrap secrets (generated at deploy time)
+tls/
+.nomad-bootstrap-token
+ansible/inventory/group_vars/vault_passwords/
+
 # Generated var-files (produced by scripts/generate_vars.py from config.py)
 environments/*/jobs/*.vars
 environments/*/nomad.vars

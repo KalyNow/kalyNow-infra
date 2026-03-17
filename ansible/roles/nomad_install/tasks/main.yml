@@ -1,0 +1,68 @@
+---
+# ─── Role: nomad_install ──────────────────────────────────────────────────────
+#
+# Installs Nomad via the official HashiCorp apt repository.
+# Idempotent — skips re-install if the correct version is already present.
+
+- name: "Install | Install prerequisites"
+  ansible.builtin.apt:
+    name:
+      - curl
+      - gpg
+      - lsb-release
+      - apt-transport-https
+      - ca-certificates
+    state: present
+    update_cache: true
+
+- name: "Install | Add HashiCorp GPG key"
+  ansible.builtin.shell:
+    cmd: >
+      curl -fsSL https://apt.releases.hashicorp.com/gpg |
+      gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+    creates: /usr/share/keyrings/hashicorp-archive-keyring.gpg
+
+- name: "Install | Add HashiCorp apt repository"
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg]
+      https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main
+    state: present
+    filename: hashicorp
+
+- name: "Install | Install Nomad"
+  ansible.builtin.apt:
+    name: "nomad"
+    state: present
+    update_cache: true
+
+- name: "Install | Verify Nomad version"
+  ansible.builtin.command: nomad version
+  register: _nomad_version_out
+  changed_when: false
+
+- name: "Install | Show installed version"
+  ansible.builtin.debug:
+    msg: "{{ _nomad_version_out.stdout_lines[0] }}"
+
+- name: "Install | Create Nomad config directory"
+  ansible.builtin.file:
+    path: "{{ nomad_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: "Install | Create Nomad data directory"
+  ansible.builtin.file:
+    path: "{{ nomad_data_dir }}"
+    state: directory
+    owner: nomad
+    group: nomad
+    mode: "0750"
+
+- name: "Install | Remove default nomad.hcl (conflicts with our split config)"
+  ansible.builtin.file:
+    path: "{{ nomad_config_dir }}/nomad.hcl"
+    state: absent
+  notify: Restart Nomad

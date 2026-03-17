@@ -65,10 +65,9 @@ variable "traefik_behind_proxy" {
 
 job "traefik" {
   datacenters = [var.datacenter]
-  type        = "service"
+  type        = "system"
 
   group "traefik" {
-    count = 1
 
     network {
       port "http"      { static = var.traefik_http_port }

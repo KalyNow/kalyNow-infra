@@ -1,0 +1,54 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  cluster.yml — THE ONLY FILE YOU NEED TO EDIT
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+#  To move to a new server:   change nomad_server_ip + server1 ansible_host
+#  To add a client:           add an entry to nomad_clients_ips
+#  To swap a client:          change its IP in nomad_clients_ips
+#
+#  Everything else (TLS certs, config files, volumes) is derived automatically.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ── Server node ────────────────────────────────────────────────────────────────
+#
+# One server is enough for a production single-region cluster.
+# If you ever add more server nodes: duplicate the block, bump bootstrap_expect.
+
+nomad_server_ip: ""          # ← change this to move to a new server
+
+
+# ── Client nodes ───────────────────────────────────────────────────────────────
+#
+# Add / remove IPs freely. The list drives both the inventory (ansible_host)
+# and the Nomad client config (servers = [...]).
+# Keys match the aliases in hosts.ini (client1, client2, …).
+
+nomad_clients_ips:
+  client1: ""                 # ← change or add IPs here
+  # client2: "X.X.X.X"
+  # client3: "X.X.X.X"
+
+
+# ── SSH user ───────────────────────────────────────────────────────────────────
+
+ansible_user: "root"
+ansible_ssh_private_key_file: "~/.ssh/id_ed25519"
+
+
+# ── TLS certificate extra SANs ─────────────────────────────────────────────────
+#
+# The server cert is automatically signed for:
+#   - nomad_server_ip       (always included automatically)
+#   - 127.0.0.1             (always included)
+#   - server.global.nomad   (always included)
+#
+# Add extra IPs or DNS names here only if you need them (e.g. a load-balancer IP).
+
+tls_extra_ips: []
+# tls_extra_ips:
+#   - "10.0.0.1"
+
+tls_extra_dns: []
+# tls_extra_dns:
+#   - "nomad.example.com"

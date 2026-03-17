@@ -1,0 +1,24 @@
+# ─── Variables shared by ALL nodes ──────────────────────────────────────────
+#
+# ✏️  Do NOT edit IPs here. Edit inventory/group_vars/cluster.yml instead.
+
+nomad_version: "1.11.3"
+nomad_datacenter: "dc1"
+nomad_region: "global"
+nomad_data_dir: "/opt/nomad/data"
+nomad_config_dir: "/etc/nomad.d"
+
+# TLS cert directory on the Ansible controller (generated once, then distributed)
+tls_local_dir: "{{ playbook_dir }}/../tls"
+
+# nomad_server_ip is defined in cluster.yml — do not set it here.
+
+# Host volumes (created on every node)
+nomad_volumes:
+  - { path: "/opt/nomad/volumes/postgres",    owner: "root",  group: "root",  mode: "0750" }
+  - { path: "/opt/nomad/volumes/mongodb",     owner: "root",  group: "root",  mode: "0750" }
+  - { path: "/opt/nomad/volumes/redis",       owner: "root",  group: "root",  mode: "0750" }
+  - { path: "/opt/nomad/volumes/rustfs",      owner: "10001", group: "10001", mode: "0750" }
+  - { path: "/opt/nomad/volumes/kafka",       owner: "root",  group: "root",  mode: "0750" }
+  - { path: "/opt/nomad/volumes/clickhouse",  owner: "root",  group: "root",  mode: "0750" }
+  - { path: "/opt/nomad/volumes/vault",       owner: "100",   group: "100",   mode: "0750" }

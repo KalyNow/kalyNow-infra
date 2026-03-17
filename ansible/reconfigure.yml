@@ -1,0 +1,25 @@
+---
+# ─── reconfigure.yml ─────────────────────────────────────────────────────────
+#
+# Push config changes to all nodes (or a subset) and restart Nomad.
+# Skips installation and TLS generation.
+#
+# Usage:
+#   ansible-playbook reconfigure.yml                 # all nodes
+#   ansible-playbook reconfigure.yml --limit vps2   # one node only
+
+- name: "Push Nomad config to all nodes"
+  hosts: nomad_all
+  gather_facts: true
+  roles:
+    - role: nomad_configure
+
+- name: "Restart Nomad service"
+  hosts: nomad_all
+  gather_facts: false
+  tasks:
+    - name: "Service | Restart nomad"
+      ansible.builtin.systemd:
+        name: nomad
+        state: restarted
+        daemon_reload: true

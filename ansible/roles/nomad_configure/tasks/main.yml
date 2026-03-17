@@ -1,0 +1,54 @@
+---
+# ─── Role: nomad_configure ───────────────────────────────────────────────────
+#
+# Deploys the correct Nomad config fragments to each node type:
+#   server nodes → server.hcl + vault.hcl + volumes.hcl
+#   client nodes → client.hcl + vault.hcl + volumes.hcl
+
+- name: "Configure | Deploy server.hcl on server nodes"
+  ansible.builtin.template:
+    src: server.hcl.j2
+    dest: "{{ nomad_config_dir }}/server.hcl"
+    owner: root
+    group: root
+    mode: "0644"
+  when: inventory_hostname in groups['nomad_servers']
+  notify: Restart Nomad
+
+- name: "Configure | Deploy client.hcl on client nodes"
+  ansible.builtin.template:
+    src: client.hcl.j2
+    dest: "{{ nomad_config_dir }}/client.hcl"
+    owner: root
+    group: root
+    mode: "0644"
+  when: inventory_hostname in groups['nomad_clients']
+  notify: Restart Nomad
+
+- name: "Configure | Deploy vault.hcl on all nodes"
+  ansible.builtin.template:
+    src: vault.hcl.j2
+    dest: "{{ nomad_config_dir }}/vault.hcl"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Nomad
+
+- name: "Configure | Deploy volumes.hcl on all nodes"
+  ansible.builtin.template:
+    src: volumes.hcl.j2
+    dest: "{{ nomad_config_dir }}/volumes.hcl"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Nomad
+
+- name: "Configure | Validate Nomad configuration"
+  ansible.builtin.command: nomad config validate {{ nomad_config_dir }}
+  register: _validate_out
+  changed_when: false
+  failed_when: _validate_out.rc != 0
+
+- name: "Configure | Show validation result"
+  ansible.builtin.debug:
+    msg: "{{ _validate_out.stdout }}"

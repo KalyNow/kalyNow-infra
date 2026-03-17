@@ -1,0 +1,3 @@
+# ─── Client-node extra variables ────────────────────────────────────────────
+
+nomad_advertise_ip: "{{ ansible_host }}"

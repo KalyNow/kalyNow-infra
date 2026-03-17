@@ -1,0 +1,10 @@
+# ─── Server-node extra variables ────────────────────────────────────────────
+#
+# ✏️  IPs come from cluster.yml — do not hardcode them here.
+
+# Each server advertises the IP defined for it in cluster.yml (set via ansible_host).
+nomad_advertise_ip: "{{ ansible_host }}"
+
+# TLS cert extra IPs/DNS are built automatically from cluster.yml in the nomad_tls role.
+# tls_server_additional_ips and tls_server_additional_dns are derived there — no need
+# to list them here.
